@@ -1,6 +1,6 @@
 {
   "name": "@txstate-mws/graphql-server",
-  "version": "1.0.7",
+  "version": "1.0.11",
   "description": "A simple graphql server designed to work with typegraphql.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "dataloader-factory": "^4.1.2",
-    "fastify-txstate": "^2.0.4",
+    "fastify-txstate": "^2.0.5",
     "graphql": "^15.5.0",
     "jsonwebtoken": "^8.5.1",
     "lru-cache": "^6.0.0",

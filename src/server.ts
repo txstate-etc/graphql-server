@@ -7,10 +7,17 @@ import http2 from 'http2'
 import LRU from 'lru-cache'
 import path from 'path'
 import { Cache } from 'txstate-utils'
-import { buildSchema, NonEmptyArray } from 'type-graphql'
-import { Context } from './context'
+import { buildSchema, BuildSchemaOptions } from 'type-graphql'
+import { Context, Type } from './context'
 import { ExecutionError, ParseError } from './errors'
 import { shasum } from './util'
+
+export interface GQLStartOpts <CustomContext extends Context = Context> extends BuildSchemaOptions {
+  port?: number
+  gqlEndpoint?: string
+  playgroundEndpoint?: string
+  customContext?: Type<CustomContext>
+}
 
 export class GQLServer extends Server {
   constructor (config?: Partial<FastifyServerOptions & {
@@ -20,10 +27,10 @@ export class GQLServer extends Server {
     super({ logger: process.env.NODE_ENV !== 'development', ...config })
   }
 
-  public async start (options?: number | { port?: number, resolvers: NonEmptyArray<Function>, gqlEndpoint?: string, playgroundEndpoint?: string }) {
+  public async start (options?: number | GQLStartOpts) {
     if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
     const schema = await buildSchema({
-      resolvers: options.resolvers,
+      ...options,
       validate: false
     })
     const parsedQueryCache = new Cache(async (query: string) => {
@@ -65,7 +72,7 @@ export class GQLServer extends Server {
           return { errors: parsedQuery.errors }
         }
         const start = new Date()
-        const ret = await execute(schema, parsedQuery, {}, new Context(req), req.body.variables, req.body.operationName)
+        const ret = await execute(schema, parsedQuery, {}, new (options.customContext ?? Context)(req), req.body.variables, req.body.operationName)
         if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
         if (req.body.operationName !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName ?? req.body.query)
         return ret
