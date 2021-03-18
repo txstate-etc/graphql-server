@@ -1,0 +1,56 @@
+{
+  "name": "@txstate-mws/graphql-server",
+  "version": "1.0.0",
+  "description": "A simple graphql server designed to work with typegraphql.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "prepublishOnly": "node prepublish.js",
+    "build": "rm -rf ./lib && tsc && cp src/playground.html ./lib/ && cp package.json ./lib/ && cp README.md ./lib/ && cp LICENSE ./lib/ && cp prepublish.js ./lib/",
+    "mocha": "mocha -r ts-node/register test/**/*.ts --exit",
+    "test": "./test.sh",
+    "pub": "npm run build && cd ./lib && RELEASE_MODE=true npm publish --access public"
+  },
+  "dependencies": {
+    "dataloader-factory": "^4.1.2",
+    "fastify-txstate": "^2.0.4",
+    "graphql": "^15.5.0",
+    "jsonwebtoken": "^8.5.1",
+    "lru-cache": "^6.0.0",
+    "reflect-metadata": "^0.1.13",
+    "txstate-utils": "^1.3.2",
+    "type-graphql": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.2.15",
+    "@types/jsonwebtoken": "^8.5.1",
+    "@types/lru-cache": "^5.1.0",
+    "@types/mocha": "^8.2.1",
+    "@types/node": "^14.14.35",
+    "@typescript-eslint/eslint-plugin": "^4.6.1",
+    "@typescript-eslint/parser": "^4.6.1",
+    "chai": "^4.2.0",
+    "eslint": "^7.13.0",
+    "eslint-config-standard-with-typescript": "^20.0.0",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "mocha": "^8.3.2",
+    "typescript": "^4.0.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/txstate-etc/graphql-server.git"
+  },
+  "keywords": [
+    "graphql",
+    "typegraphql",
+    "fastify"
+  ],
+  "author": "Nick Wing",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/txstate-etc/graphql-server/issues"
+  },
+  "homepage": "https://github.com/txstate-etc/graphql-server#readme"
+}
