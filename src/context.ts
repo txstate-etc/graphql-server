@@ -17,10 +17,14 @@ export class Context {
     this.dlFactory = new DataLoaderFactory(this)
     const m = req.headers.authorization?.match(/^bearer (.*)$/i)
     const token = m?.[1]
-    if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
-    const payload: any = token ? jwt.verify(token, this.jwtVerifyKey) : {}
-    this.auth = {
-      username: payload.username
+    if (token) {
+      if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
+      const payload: any = jwt.verify(token, this.jwtVerifyKey)
+      this.auth = {
+        username: payload.username
+      }
+    } else {
+      this.auth = { username: 'anonymous' }
     }
     this.serviceInstances = {}
   }

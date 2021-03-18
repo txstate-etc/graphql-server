@@ -4,13 +4,17 @@ export interface FieldError {
   field: string
   message?: string
 }
-
 export class ValidationError extends Error {
   public invalidArgs: FieldError[]
 
   constructor (fielderrors: FieldError[], message?: string) {
     super(message ?? 'Mutation had validation errors.')
     this.invalidArgs = fielderrors
+  }
+}
+export class UnimplementedError extends Error {
+  constructor () {
+    super('Requested functionality is not yet implemented.')
   }
 }
 

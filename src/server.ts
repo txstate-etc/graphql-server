@@ -1,8 +1,11 @@
 import 'reflect-metadata'
+import { FastifyServerOptions } from 'fastify'
 import Server, { HttpError } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
 import { execute, parse, validate } from 'graphql'
+import http2 from 'http2'
 import LRU from 'lru-cache'
+import path from 'path'
 import { Cache } from 'txstate-utils'
 import { buildSchema, NonEmptyArray } from 'type-graphql'
 import { Context } from './context'
@@ -10,7 +13,14 @@ import { ExecutionError, ParseError } from './errors'
 import { shasum } from './util'
 
 export class GQLServer extends Server {
-  public async start (options?: number | { port?: number, resolvers: NonEmptyArray<Function>, gqlEndpoint: string, playgroundEndpoint: string }) {
+  constructor (config?: Partial<FastifyServerOptions & {
+    http2: true
+    https: http2.SecureServerOptions
+  }>) {
+    super({ logger: process.env.NODE_ENV !== 'development', ...config })
+  }
+
+  public async start (options?: number | { port?: number, resolvers: NonEmptyArray<Function>, gqlEndpoint?: string, playgroundEndpoint?: string }) {
     if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
     const schema = await buildSchema({
       resolvers: options.resolvers,
@@ -31,7 +41,7 @@ export class GQLServer extends Server {
     })
     this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
       res = res.type('text/html')
-      const pg = (await readFile('playground.html')).toString('utf-8')
+      const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
       return options.gqlEndpoint ? pg.replace(/endpoint: '\/graphql'/i, `endpoint: '${options.gqlEndpoint}'`) : pg
     })
     this.app.post<{ Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }>(options.gqlEndpoint ?? '/graphql',
@@ -57,7 +67,7 @@ export class GQLServer extends Server {
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, new Context(req), req.body.variables, req.body.operationName)
         if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
-        console.debug(`${new Date().getTime() - start.getTime()}ms`, req.body.query)
+        if (req.body.operationName !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName ?? req.body.query)
         return ret
       }
     )
