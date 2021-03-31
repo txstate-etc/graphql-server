@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { FastifyServerOptions } from 'fastify'
 import Server, { HttpError } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, parse, validate } from 'graphql'
+import { execute, lexicographicSortSchema, parse, validate } from 'graphql'
 import http2 from 'http2'
 import LRU from 'lru-cache'
 import path from 'path'
@@ -29,10 +29,10 @@ export class GQLServer extends Server {
 
   public async start (options?: number | GQLStartOpts) {
     if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
-    const schema = await buildSchema({
+    const schema = lexicographicSortSchema(await buildSchema({
       ...options,
       validate: false
-    })
+    }))
     const parsedQueryCache = new Cache(async (query: string) => {
       const parsedQuery = parse(query)
       const errors = validate(schema, parsedQuery)
