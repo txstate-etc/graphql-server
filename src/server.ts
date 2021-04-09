@@ -74,7 +74,7 @@ export class GQLServer extends Server {
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, new (options.customContext ?? Context)(req), req.body.variables, req.body.operationName)
         if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
-        if (req.body.operationName !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName ?? req.body.query)
+        if (req.body.operationName !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
         return ret
       }
     )
