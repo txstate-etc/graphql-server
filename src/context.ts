@@ -29,7 +29,7 @@ export class Context {
     this.serviceInstances = {}
   }
 
-  svc <T extends BaseService<any>> (ServiceType: Type<T>) {
+  svc <T extends BaseService> (ServiceType: Type<T>) {
     if (!this.serviceInstances[ServiceType.name]) this.serviceInstances[ServiceType.name] = new ServiceType(this)
     return this.serviceInstances[ServiceType.name] as T
   }

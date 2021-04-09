@@ -1,8 +1,7 @@
 import { filterAsync } from 'txstate-utils'
 import { Context, Type } from './context'
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export abstract class BaseService<T> {
+export abstract class BaseService {
   constructor (protected ctx: Context) {}
 
   get loader () {
@@ -13,7 +12,7 @@ export abstract class BaseService<T> {
     return this.ctx.auth
   }
 
-  svc <T extends BaseService<any>> (ServiceType: Type<T>): T {
+  svc <T extends BaseService> (ServiceType: Type<T>): T {
     return this.ctx.svc(ServiceType)
   }
 
@@ -22,7 +21,7 @@ export abstract class BaseService<T> {
   }
 }
 
-export abstract class AuthorizedService<T> extends BaseService<T> {
+export abstract class AuthorizedService<T> extends BaseService {
   async removeUnauthorized (objects: T[]) {
     return await filterAsync(objects, async obj => await this.mayView(obj))
   }
