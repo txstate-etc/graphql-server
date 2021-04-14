@@ -51,8 +51,11 @@ export class GQLServer extends Server {
       const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
       return options.gqlEndpoint ? pg.replace(/endpoint: '\/graphql'/i, `endpoint: '${options.gqlEndpoint}'`) : pg
     })
-    this.app.post<{ Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }>(options.gqlEndpoint ?? '/graphql',
-      async req => {
+    this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
+      res = res.type('text/html')
+      const pg = (await readFile(path.join(__dirname, 'voyager.html'))).toString('utf-8')
+      return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
+    })
         let query: string|undefined = req.body.query
         const hash = req.body.extensions?.persistedQuery?.sha256Hash
         if (hash) {

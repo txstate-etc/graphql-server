@@ -6,7 +6,7 @@
   "types": "index.d.ts",
   "scripts": {
     "prepublishOnly": "node prepublish.js",
-    "build": "rm -rf ./lib && tsc && cp src/playground.html ./lib/ && cp package.json ./lib/ && cp README.md ./lib/ && cp LICENSE ./lib/ && cp prepublish.js ./lib/",
+    "build": "rm -rf ./lib && tsc && cp src/*.html ./lib/ && cp package.json ./lib/ && cp README.md ./lib/ && cp LICENSE ./lib/ && cp prepublish.js ./lib/",
     "mocha": "mocha -r ts-node/register test/**/*.ts --exit",
     "test": "./test.sh",
     "pub": "npm run build && cd ./lib && RELEASE_MODE=true npm publish --access public"
