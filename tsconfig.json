@@ -6,7 +6,9 @@
     "outDir": "./lib",
     "strict": true,
     "esModuleInterop": true,
-    "typeRoots": ["./typings", "./node_modules/@types"]
+    "typeRoots": ["./typings", "./node_modules/@types"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": ["src"]
 }

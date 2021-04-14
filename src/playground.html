@@ -50,7 +50,10 @@
   </div>
   <script>window.addEventListener('load', function (event) {
       GraphQLPlayground.init(document.getElementById('root'), {
-        endpoint: '/graphql'
+        endpoint: 'GRAPHQL_ENDPOINT',
+        settings: {
+          'schema.polling.enable': false
+        }
       })
     })</script>
 </body>

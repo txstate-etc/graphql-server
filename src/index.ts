@@ -1,4 +1,5 @@
-export { GQLServer } from './server'
-export { BaseService } from './service'
-export { Context } from './context'
+import 'reflect-metadata'
+export * from './context'
 export * from './errors'
+export * from './server'
+export * from './service'
