@@ -13,16 +13,25 @@ export class Context<AuthType = any> {
 
   constructor (req?: FastifyRequest) {
     this.dlFactory = new DataLoaderFactory(this)
+    this.serviceInstances = {}
+    this.auth = this.authFromReq(req)
+  }
+
+  authFromReq (req?: FastifyRequest) {
     const m = req?.headers.authorization?.match(/^bearer (.*)$/i)
     const token = m?.[1]
     if (token) {
       if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
-      const payload = jwt.verify(token, this.jwtVerifyKey) as unknown as AuthType
-      this.auth = payload
+      try {
+        const payload = jwt.verify(token, this.jwtVerifyKey) as unknown as AuthType
+        return payload
+      } catch (e) {
+        console.error(e)
+        return undefined
+      }
     } else {
-      this.auth = undefined
+      return undefined
     }
-    this.serviceInstances = {}
   }
 
   svc <T extends BaseService> (ServiceType: Type<T>) {
@@ -33,7 +42,7 @@ export class Context<AuthType = any> {
   private lasttime?: Date
   timing (...messages: string[]) {
     const now = new Date()
-    console.log(now.getTime() - (this.lasttime ?? now).getTime(), ...messages)
+    console.debug(now.getTime() - (this.lasttime ?? now).getTime(), ...messages)
     this.lasttime = now
   }
 }

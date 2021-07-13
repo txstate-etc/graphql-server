@@ -1,8 +1,7 @@
-import { FastifyServerOptions, FastifyRequest } from 'fastify'
-import Server, { HttpError } from 'fastify-txstate'
+import { FastifyRequest } from 'fastify'
+import Server, { FastifyTxStateOptions, HttpError } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
 import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, validate } from 'graphql'
-import http2 from 'http2'
 import LRU from 'lru-cache'
 import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
@@ -14,18 +13,15 @@ import { shasum } from './util'
 export interface GQLStartOpts <CustomContext extends Context = Context> extends BuildSchemaOptions {
   port?: number
   gqlEndpoint?: string|string[]
-  playgroundEndpoint?: string
-  voyagerEndpoint?: string
+  playgroundEndpoint?: string|false
+  voyagerEndpoint?: string|false
   customContext?: Type<CustomContext>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
 
 export class GQLServer extends Server {
-  constructor (config?: Partial<FastifyServerOptions & {
-    http2: true
-    https: http2.SecureServerOptions
-  }>) {
+  constructor (config?: FastifyTxStateOptions) {
     super({ logger: process.env.NODE_ENV !== 'development', ...config })
   }
 
@@ -33,6 +29,22 @@ export class GQLServer extends Server {
     if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
     options.gqlEndpoint ??= '/graphql'
     options.gqlEndpoint = toArray(options.gqlEndpoint)
+
+    if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
+      this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
+        res = res.type('text/html')
+        const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
+        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
+      })
+    }
+    if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
+      this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
+        res = res.type('text/html')
+        const pg = (await readFile(path.join(__dirname, 'voyager.html'))).toString('utf-8')
+        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
+      })
+    }
+
     const schema = lexicographicSortSchema(await buildSchema({
       ...options,
       validate: false
@@ -50,17 +62,6 @@ export class GQLServer extends Server {
       max: 1024 * 1024,
       length: (entry: string) => entry.length
     })
-    this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
-      res = res.type('text/html')
-      const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
-      return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
-    })
-    this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
-      res = res.type('text/html')
-      const pg = (await readFile(path.join(__dirname, 'voyager.html'))).toString('utf-8')
-      return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
-    })
-
     const handlePost = async (req: FastifyRequest<GQLRequest>) => {
       let query: string|undefined = req.body.query
       const hash = req.body.extensions?.persistedQuery?.sha256Hash
