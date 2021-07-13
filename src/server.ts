@@ -16,6 +16,7 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   playgroundEndpoint?: string|false
   voyagerEndpoint?: string|false
   customContext?: Type<CustomContext>
+  send401?: boolean
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
@@ -82,7 +83,10 @@ export class GQLServer extends Server {
         return { errors: parsedQuery.errors }
       }
       const start = new Date()
-      const ret = await execute(schema, parsedQuery, {}, new (options.customContext ?? Context)(req), req.body.variables, req.body.operationName)
+      const ctx = new (options.customContext ?? Context)(req)
+      await ctx.waitForAuth()
+      if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
+      const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
       if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
       if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
       return ret

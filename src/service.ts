@@ -4,8 +4,8 @@ import { Context, Type } from './context'
 export abstract class BaseService {
   constructor (protected ctx: Context) {}
 
-  get loader () {
-    return this.ctx.dlFactory
+  get loaders () {
+    return this.ctx.loaders
   }
 
   get auth () {
