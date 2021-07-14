@@ -158,3 +158,12 @@ class UserService extends BaseService {
     return response
   }
 ```
+The convenience methods are:
+* `response.assert (condition: boolean, message: string, arg?: string)`
+* `response.assertBetween (input: any, arg: string, min: number, max: number)`
+  * error message will be `Value out of range, must be between ${min} and ${max}`
+* `assertPositive (input: any, arg: string)`
+  * error message will be `Value must not be negative`
+* `assertLength (input: any, arg: string, min: number, max: number)`
+  * error message for strings `Character maximum exceeded.` or `Character minimum not met.`
+  * error message for arrays `Too many entries.` or `Not enough entries.`
