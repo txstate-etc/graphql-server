@@ -8,15 +8,34 @@ import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, BuildSchemaOptions } from 'type-graphql'
 import { Context, Type } from './context'
 import { ExecutionError, ParseError } from './errors'
+import { buildFederationSchema } from './federation'
 import { shasum } from './util'
+
+interface PlaygroundSettings {
+  'general.betaUpdates'?: boolean
+  'editor.cursorShape'?: 'line' | 'block' | 'underline'
+  'editor.theme'?: 'dark' | 'light'
+  'editor.reuseHeaders'?: boolean
+  'tracing.hideTracingResponse'?: boolean
+  'tracing.tracingSupported'?: boolean
+  'editor.fontSize'?: number
+  'editor.fontFamily'?: string
+  'request.credentials'?: string
+  'request.globalHeaders'?: { [key: string]: string }
+  'schema.polling.enable'?: boolean
+  'schema.polling.endpointFilter'?: string
+  'schema.polling.interval'?: number
+}
 
 export interface GQLStartOpts <CustomContext extends Context = Context> extends BuildSchemaOptions {
   port?: number
   gqlEndpoint?: string|string[]
   playgroundEndpoint?: string|false
+  playgroundSettings?: PlaygroundSettings
   voyagerEndpoint?: string|false
   customContext?: Type<CustomContext>
   send401?: boolean
+  federated?: boolean
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
@@ -30,12 +49,14 @@ export class GQLServer extends Server {
     if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
     options.gqlEndpoint ??= '/graphql'
     options.gqlEndpoint = toArray(options.gqlEndpoint)
+    options.playgroundSettings ??= {}
+    options.playgroundSettings['schema.polling.enable'] ??= false
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
         res = res.type('text/html')
         const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
-        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
+        return pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint![0]).replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
       })
     }
     if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
@@ -46,10 +67,13 @@ export class GQLServer extends Server {
       })
     }
 
-    const schema = lexicographicSortSchema(await buildSchema({
+    let schema = lexicographicSortSchema(await buildSchema({
       ...options,
       validate: false
     }))
+    if (options.federated) {
+      schema = buildFederationSchema(schema)
+    }
     const parsedQueryCache = new Cache(async (query: string) => {
       const parsedQuery = parse(query)
       const errors = validate(schema, parsedQuery)

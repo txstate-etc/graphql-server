@@ -3,6 +3,9 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
-    "typings/**/*.ts"
+    "testbookservice/**/*.ts",
+    "testgateway/**/*.ts",
+    "testgatewayapollo/**/*.ts",
+    "testlibraryservice/**/*.ts"
   ]
 }

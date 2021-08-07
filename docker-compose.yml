@@ -1,0 +1,41 @@
+version: '3'
+services:
+  test:
+    build:
+      context: .
+    depends_on:
+      - gateway
+      - basicbookservice
+      - bookservice
+      - libraryservice
+  bookservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.bookservice
+    logging:
+      driver: none
+  basicbookservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.bookservice
+    environment:
+      WITHOUT_FEDERATION: 'true'
+    logging:
+      driver: none
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.apollo
+    # logging:
+    #   driver: none
+    ports:
+      - 80:80
+    depends_on:
+      - bookservice
+      - libraryservice
+  libraryservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.libraryservice
+    logging:
+      driver: none
