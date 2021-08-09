@@ -227,7 +227,7 @@ export class Book {
 ```
 The `@extends` directive lets the gateway know that we don't own this type and we need its help to fetch it. You must add the `@extends` directive even if you are not adding any new properties to the type (see below for more on that).
 
-The `@external` directive lets the gateway know which fields belong to the other graph. All the fields involved in the other graph's `@key` directive should be listed on your stub and marked external. Any fields not marked external will be added to the type in the federated graph (see below section for more).
+The `@external` directive lets the gateway know which fields belong to another graph. All the fields involved in another graph's `@key` directive should be listed on your stub and marked external. If you have any fields not marked external, the gateway will add them to the federated graph and assume that you are responsible for filling them with data (see below section for more).
 
 Then create a resolver that creates stubs:
 ```typescript
