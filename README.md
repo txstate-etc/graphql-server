@@ -35,12 +35,21 @@ We export a `Server` class; the constructor accepts all the same configuration t
 
 The GraphQL route is extremely lightweight but fast - it caches the parsing and analysis of queries (similar to graphql-jit) to save work on subsequent requests, and supports the apollo-server spec for persisted queries.
 
+## Context
+The overall strategy adopted by this library is that the GraphQL context is not just for authentication information; it is where we will store all state related to fulfilling a specific request, including request-scoped caching. To do this, we provide a `Context` class that is coded up and ready to support this strategy. The `dataloader-factory` instance is stored there as `ctx.loaders`, along with authentication information as `context.auth`, and instances of your services, which are created on demand with `context.svc(ServiceClass)`.
+
+This way, fetching a service instance inside a resolver is very straightforward:
+```typescript
+@Query(returns => [Book])
+async books (@Ctx() ctx: Context) {
+  return await ctx.svc(BookService).fetchAll()
+}
+```
+
 ## Services
-Keeping your project organized is important, and one key way to do that is to split responsibilities into resolvers that are as thin as possible while fully specifying your GraphQL schema, and services that implement your business logic, authorization, caching, dataloading, and database interactions.
+We mentioned services in the previous section, but we haven't talked about what those are yet. Keeping your project organized is important, and one key way to do that is to split responsibilities. First you have `typegraphql` resolvers that are as thin as possible while fully specifying your GraphQL schema. The resolvers make calls to service classes that implement your business logic, authorization, caching, dataloading, and database interactions. I usually like to split things a little further so that database-specific SQL is in yet another layer, but we won't cover that in this README as it's not necessary for `graphql-server`.
 
-The overall strategy adopted by this library is that the GraphQL context is the primary store of information related to a specific request. The dataloader-factory instance is stored there, along with instances of your services, which are created on demand with `context.svc(ServiceClass)` and given the dataloader-factory instance for convenient access.
-
-This library provides a `BaseService` abstract class to help you get started making services. The most important thing it provides is access to the GraphQL context object, with its `ctx` property. So when you write your service methods, you have easy access to the context without having to constantly pass it from your resolvers.
+To help you organize services this way, this library provides a `BaseService` abstract class. The most important thing it provides is the `Context` object we discussed earlier. Anything extending `BaseService` will have a `this.ctx` property for easy access to the context without having to constantly pass it from your resolvers.
 
 ```typescript
 const bookLoader = new PrimaryKeyLoader({
@@ -54,12 +63,12 @@ class BookService extends BaseService {
 }
 ```
 
-For convenience, `BaseService` passes most of the Context methods through to its context, to save you a little bit of typing:
+You might notice above that I used `this.loaders` instead of `this.ctx.loaders`, totally contradicting what I stated above. Well, for convenience, `BaseService` passes applicable methods through to its context, to save you a little bit of typing:
 
-`this.svc` for access to other models' services, a tiny bit easier than `this.ctx.svc`
-`this.loaders` for your dataloader-factory instance, a tiny bit easier than `this.ctx.loaders`
-`this.auth` for the user object provided by authentication, over `this.ctx.auth`
-`this.timing` for development logging, over `this.ctx.timing`
+* `this.svc` for access to other models' services, a tiny bit easier than `this.ctx.svc`
+* `this.loaders` for your dataloader-factory instance, a tiny bit easier than `this.ctx.loaders`
+* `this.auth` for the user object provided by authentication, over `this.ctx.auth`
+* `this.timing` for development logging, over `this.ctx.timing`
 
 So when you need access to data, no matter whether you are in a resolver or another model's service, you can obtain the service of your choice from the context.
 
