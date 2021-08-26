@@ -22,7 +22,7 @@ async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: an
     })
     if (resp.data.errors?.length) throw new Error(resp.data.errors[0].message)
     return resp.data.data as T
-  } catch (e) {
+  } catch (e: any) {
     if (!e.response) throw e
     throw new Error(JSON.stringify(e.response.data, undefined, 2))
   }

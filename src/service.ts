@@ -1,8 +1,8 @@
 import { filterAsync } from 'txstate-utils'
 import { Context, Type } from './context'
 
-export abstract class BaseService {
-  constructor (protected ctx: Context) {}
+export abstract class BaseService<AuthType = any> {
+  constructor (protected ctx: Context<AuthType>) {}
 
   get loaders () {
     return this.ctx.loaders
@@ -21,10 +21,10 @@ export abstract class BaseService {
   }
 }
 
-export abstract class AuthorizedService<T> extends BaseService {
-  async removeUnauthorized (objects: T[]) {
+export abstract class AuthorizedService<AuthType = any> extends BaseService<AuthType> {
+  async removeUnauthorized <T> (objects: T[]) {
     return await filterAsync(objects, async obj => await this.mayView(obj))
   }
 
-  abstract mayView (obj: T): Promise<boolean>
+  abstract mayView <T> (obj: T): Promise<boolean>
 }

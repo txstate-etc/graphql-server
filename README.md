@@ -42,10 +42,22 @@ The overall strategy adopted by this library is that the GraphQL context is the 
 
 This library provides a `BaseService` abstract class to help you get started making services. The most important thing it provides is access to the GraphQL context object, with its `ctx` property. So when you write your service methods, you have easy access to the context without having to constantly pass it from your resolvers.
 
-For convenience, `BaseService` passes most methods through from your context, to save you a little bit of typing:
+```typescript
+const bookLoader = new PrimaryKeyLoader({
+  fetch: (ids: string[]) => await getBooks(ids)
+})
 
-`this.svc` for access to other models' services, a tiny bit faster than `this.ctx.svc`
-`this.loaders` for your dataloader-factory instance, a tiny bit faster than `this.ctx.loaders`
+class BookService extends BaseService {
+  async findById (id: string) {
+    return await this.loaders.get(bookLoader).load(id)
+  }
+}
+```
+
+For convenience, `BaseService` passes most of the Context methods through to its context, to save you a little bit of typing:
+
+`this.svc` for access to other models' services, a tiny bit easier than `this.ctx.svc`
+`this.loaders` for your dataloader-factory instance, a tiny bit easier than `this.ctx.loaders`
 `this.auth` for the user object provided by authentication, over `this.ctx.auth`
 `this.timing` for development logging, over `this.ctx.timing`
 
@@ -91,6 +103,14 @@ server.start({
 ```
 `authFromReq`, if you write it, should return an object for `ctx.auth` or `undefined` if authentication could not be established. It can be async or return a promise if you need to do a lookup, like searching a database for a session id.
 
+Keep in mind that if you add brand new methods to your custom Context class, you'll need to reference your class in every resolver after `@Ctx()`:
+```typescript
+@FieldResolver(returns => [Author])
+async authors (@Ctx() ctx: CustomContext, @Root() book: Book) {
+  // return the authors
+}
+```
+If all you've done is replace `authFromReq` or `tokenFromReq`, this isn't necessary because all the types are compatible and the context object you'll receive will still be an instance of whatever you passed as `customContext`.
 ## Authorization
 Generally speaking, there are two kinds of authorization:
 * User-based
@@ -107,6 +127,18 @@ This library provides a completely opt-in `AuthorizedService` abstract class tha
 
 There's nothing here for authorizing mutations; that should generally take place at the beginning of the mutation method in the service class, but can also be broken out into helper methods like `mayCreate` or `mayDelete`.
 
+### Typescript Note
+If you'd like to keep track of the data type of `ctx.auth`, you can pass it as a generic, or create your own `AuthorizedService`:
+```typescript
+export abstract class AuthzdService extends AuthorizedService<{ username: string }> {}
+
+export class BookService extends AuthzdService {
+  async mayCreate () {
+    return await isUserAnAdmin(this.auth.username) // this.auth.username is typed as a string
+  }
+}
+```
+This is also a great way to add more authorization-related helper methods like `fetchCurrentUser` or `isLibraryOwner` for use in multiple services.
 ## Timing
 Earlier I mentioned `ctx.timing(...messages: string[])`. This is just a quick convenience method to help you track the passage of time for an individual request. You can use it to replace `console.log` statments, and each time it will print the amount of time elapsed since the last statement. Makes it easier to investigate where your bottlenecks are.
 
@@ -127,7 +159,7 @@ To use a `ValidatedResponse`, simply create and return one during the course of 
 ```typescript
 class UserService extends BaseService {
   async registerForClass (section: Section) {
-    if (!await userAllowedToRegister(ctx.auth.username, section)) {
+    if (!await userAllowedToRegister(this.auth.username, section)) {
       return ValidatedResponse.error('This user cannot register for this course.')
     }
     const response = new ValidatedResponse()
