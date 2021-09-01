@@ -8,10 +8,10 @@ resolvers.
 
 ## Basic Usage
 ```typescript
-import { Server } from '@txstate-mws/graphql-server'
+import { GQLServer } from '@txstate-mws/graphql-server'
 import { MyModel1Resolver } from './mymodel1'
 import { MyModel2Resolver } from './mymodel2'
-const server = new Server({ ... fastify configuration })
+const server = new GQLServer({ ... fastify configuration })
 server.start({
   resolvers: [MyModel1Resolver, MyModel2Resolver],
   gqlEndpoint: '/graphql',
@@ -31,7 +31,7 @@ server.start({
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
 
 ## Fastify and GraphQL server
-We export a `Server` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
+We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
 
 The GraphQL route is extremely lightweight but fast - it caches the parsing and analysis of queries (similar to graphql-jit) to save work on subsequent requests, and supports the apollo-server spec for persisted queries.
 
@@ -100,11 +100,11 @@ The JWT secret can be provided in the `JWT_SECRET` environment variable. If you 
 
 If you need to support cookies or tokens in the query string or any other sort of scheme, you can subclass the provided `Context` class, override `tokenFromReq` (to retrieve the JWT) or `authFromReq` (to do all the extraction and validation yourself), and pass your subclass in as a configuration option:
 ```typescript
-import { Server, Context } from '@txstate-mws/graphql-server'
+import { GQLServer, Context } from '@txstate-mws/graphql-server'
 class CookieContext extends Context {
   tokenFromReq: req => req.cookies.token
 }
-const server = new Server({ ... fastify configuration })
+const server = new GQLServer({ ... fastify configuration })
 server.start({
   ...,
   customContext: CookieContext
