@@ -88,6 +88,9 @@ export class GQLServer extends Server {
       length: (entry: string) => entry.length
     })
     const handlePost = async (req: FastifyRequest<GQLRequest>) => {
+      const ctx = new (options.customContext ?? Context)(req)
+      await ctx.waitForAuth()
+      if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
       let query: string|undefined = req.body.query
       const hash = req.body.extensions?.persistedQuery?.sha256Hash
       if (hash) {
@@ -107,9 +110,6 @@ export class GQLServer extends Server {
         return { errors: parsedQuery.errors }
       }
       const start = new Date()
-      const ctx = new (options.customContext ?? Context)(req)
-      await ctx.waitForAuth()
-      if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
       const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
       if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
       if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
