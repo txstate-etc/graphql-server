@@ -25,10 +25,10 @@ export abstract class BaseService<AuthType = any> {
   }
 }
 
-export abstract class AuthorizedService<AuthType = any> extends BaseService<AuthType> {
-  async removeUnauthorized <T> (objects: T[]) {
+export abstract class AuthorizedService<AuthType = any, ObjType = any> extends BaseService<AuthType> {
+  async removeUnauthorized (objects: ObjType[]) {
     return await filterAsync(objects, async obj => await this.mayView(obj))
   }
 
-  abstract mayView <T> (obj: T): Promise<boolean>
+  abstract mayView (obj: ObjType): Promise<boolean>
 }
