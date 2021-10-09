@@ -6,15 +6,15 @@ import { BaseService } from './service'
 export type Type<T> = new (...args: any[]) => T
 
 export class Context<AuthType = any> {
-  protected authPromise: Promise<AuthType|undefined>|AuthType|undefined
+  private authPromise: Promise<AuthType|undefined>|AuthType|undefined
   public auth?: AuthType
-  protected serviceInstances: Record<string, any>
+  protected serviceInstances: Map<string, any>
   public loaders: DataLoaderFactory<Context>
   protected jwtVerifyKey: string|undefined = process.env.JWT_SECRET_VERIFY ?? process.env.JWT_SECRET
 
   constructor (req?: FastifyRequest) {
     this.loaders = new DataLoaderFactory(this)
-    this.serviceInstances = {}
+    this.serviceInstances = new Map()
     this.authPromise = this.authFromReq(req)
   }
 
@@ -23,7 +23,7 @@ export class Context<AuthType = any> {
     return m?.[1]
   }
 
-  authFromReq (req?: FastifyRequest) {
+  authFromReq (req?: FastifyRequest): AuthType|Promise<AuthType>|undefined {
     const token = this.tokenFromReq(req)
     if (token) {
       if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
@@ -44,8 +44,8 @@ export class Context<AuthType = any> {
   }
 
   svc <T extends BaseService> (ServiceType: Type<T>) {
-    if (!this.serviceInstances[ServiceType.name]) this.serviceInstances[ServiceType.name] = new ServiceType(this)
-    return this.serviceInstances[ServiceType.name] as T
+    if (!this.serviceInstances.has(ServiceType.name)) this.serviceInstances.set(ServiceType.name, new ServiceType(this))
+    return this.serviceInstances.get(ServiceType.name) as T
   }
 
   private lasttime?: Date
