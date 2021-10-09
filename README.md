@@ -29,6 +29,7 @@ server.start({
 * `voyagerEndpoint?: string|false` (default `/voyager`) - endpoint to access GraphQL Voyager for visualizing your spec. `false` to disable.
 * `customContext?: Type<CustomContext>` (default `Context`) - provide a custom context class for more request-scoped state or different authentication code (more info later).
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
+* `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system. See "Federation" below for more info.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
