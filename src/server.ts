@@ -36,12 +36,13 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   customContext?: Type<CustomContext>
   send401?: boolean
   federated?: boolean
+  after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<any>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
 
 const authErrorRegex = /authentication/i
-
+async function doNothing () {}
 export class GQLServer extends Server {
   constructor (config?: FastifyTxStateOptions) {
     super({ logger: process.env.NODE_ENV !== 'development', ...config })
@@ -53,6 +54,7 @@ export class GQLServer extends Server {
     options.gqlEndpoint = toArray(options.gqlEndpoint)
     options.playgroundSettings ??= {}
     options.playgroundSettings['schema.polling.enable'] ??= false
+    options.after ??= doNothing
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
@@ -118,7 +120,11 @@ export class GQLServer extends Server {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           console.error(new ExecutionError(req.body.query, ret.errors).toString())
         }
-        if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
+        if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') {
+          const queryTime = new Date().getTime() - start.getTime()
+          console.info(`${queryTime}ms`, req.body.operationName || req.body.query)
+          options.after!(queryTime, req.body.operationName, req.body.query, req.body.variables).catch(console.error)
+        }
         return ret
       } catch (e: any) {
         if (e instanceof HttpError) {

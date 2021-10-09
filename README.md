@@ -30,6 +30,7 @@ server.start({
 * `customContext?: Type<CustomContext>` (default `Context`) - provide a custom context class for more request-scoped state or different authentication code (more info later).
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
 * `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system. See "Federation" below for more info.
+* `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
