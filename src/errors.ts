@@ -1,3 +1,4 @@
+import { HttpError } from 'fastify-txstate'
 import { GraphQLError } from 'graphql'
 import { get, isNotNull } from 'txstate-utils'
 import { Field, ObjectType, registerEnumType } from 'type-graphql'
@@ -44,23 +45,18 @@ export class MutationMessage {
 export interface ValidatedResponseArgs {
   success?: boolean
   messages?: MutationMessage[]
-  unauthenticated?: boolean
 }
 
-@ObjectType({ isAbstract: true })
-export abstract class ValidatedResponse {
+@ObjectType()
+export class ValidatedResponse {
   @Field({ description: 'True if the mutation succeeded (e.g. saved data or passed validation), even if there were warnings.' })
   success: boolean
-
-  @Field({ description: 'True if the user was unauthenticated and the mutation requires authentication. Client may need to redirect to login screen.' })
-  unauthenticated: boolean
 
   @Field(type => [MutationMessage])
   messages: MutationMessage[]
 
   constructor (config: ValidatedResponseArgs) {
-    this.unauthenticated = config.unauthenticated ?? false
-    this.success = !this.unauthenticated && !!config.success
+    this.success = !!config.success
     this.messages = config.messages ?? []
   }
 
@@ -138,7 +134,7 @@ export class GQLError extends Error {
 
   toString () {
     return `${this.message}
-${this.errors.map(e => e.message + '\n' + (e.stack ?? '')).join('\n')}
+${this.errors.map(e => (e.stack ?? '')).join('\n')}
 ${this.query}`
   }
 }
@@ -151,5 +147,10 @@ export class ParseError extends GQLError {
 export class ExecutionError extends GQLError {
   constructor (query: string, errors: readonly GraphQLError[]) {
     super('Error(s) occurred during GraphQL execution.', query, errors)
+  }
+}
+export class AuthError extends HttpError {
+  constructor () {
+    super(401)
   }
 }

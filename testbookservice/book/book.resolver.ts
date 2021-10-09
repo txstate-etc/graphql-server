@@ -1,5 +1,5 @@
 import { Arg, Ctx, FieldResolver, Query, Resolver, Root } from 'type-graphql'
-import { Context, ResolveReference } from '../../src'
+import { AuthError, Context, ResolveReference } from '../../src'
 import { Author, AuthorFilter } from '../author/author.model'
 import { AuthorService } from '../author/author.service'
 import { Book, BookFilter } from './book.model'
@@ -20,5 +20,10 @@ export class BookResolver {
   @FieldResolver(returns => [Author])
   async authors (@Ctx() ctx: Context, @Root() book: Book, @Arg('filter', { nullable: true }) filter?: AuthorFilter) {
     return await ctx.svc(AuthorService).findByBook(book, filter)
+  }
+
+  @FieldResolver(returns => Boolean)
+  async authTest () {
+    throw new AuthError()
   }
 }

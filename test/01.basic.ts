@@ -16,7 +16,7 @@ const gatewayclient = axios.create({
 
 async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: any) {
   try {
-    const resp = await client.post('graphql', {
+    const resp = await client.post<any>('graphql', {
       query,
       ...(variables ? { variables } : {})
     })
@@ -48,6 +48,14 @@ describe('basic tests', function () {
   it('should be able to get a list of books with authors directly from the non-federated book service', async () => {
     const { books } = await basicBookQuery('{ books { title, authors { name } } }')
     expect(books.length).to.be.greaterThan(0)
+  })
+  it('should get a 401 from an authenticated resolver', async () => {
+    try {
+      await basicBookQuery('{ books { authTest } }')
+      expect.fail('should have thrown error')
+    } catch (e: any) {
+      expect(e.message).to.include('"authenticationError": true')
+    }
   })
   it('should be able to get a list of books with authors directly from the federated book service', async () => {
     const { books } = await bookQuery('{ books { title, authors { name } } }')

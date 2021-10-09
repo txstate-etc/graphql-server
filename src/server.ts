@@ -1,4 +1,4 @@
-import { FastifyRequest } from 'fastify'
+import { FastifyRequest, FastifyReply } from 'fastify'
 import Server, { FastifyTxStateOptions, HttpError } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
 import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, validate } from 'graphql'
@@ -7,7 +7,7 @@ import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, BuildSchemaOptions } from 'type-graphql'
 import { Context, Type } from './context'
-import { ExecutionError, ParseError } from './errors'
+import { ExecutionError, ParseError, AuthError } from './errors'
 import { buildFederationSchema } from './federation'
 import { shasum } from './util'
 
@@ -39,6 +39,8 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
+
+const authErrorRegex = /authentication/i
 
 export class GQLServer extends Server {
   constructor (config?: FastifyTxStateOptions) {
@@ -87,33 +89,44 @@ export class GQLServer extends Server {
       max: 1024 * 1024,
       length: (entry: string) => entry.length
     })
-    const handlePost = async (req: FastifyRequest<GQLRequest>) => {
-      const ctx = new (options.customContext ?? Context)(req)
-      await ctx.waitForAuth()
-      if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
-      let query: string|undefined = req.body.query
-      const hash = req.body.extensions?.persistedQuery?.sha256Hash
-      if (hash) {
-        if (query) {
-          if (hash !== shasum(query)) throw new HttpError(400, 'provided sha does not match query')
-          persistedQueryCache.set(hash, query)
-        } else {
-          query = persistedQueryCache.get(hash)
-          if (!query) {
-            return { errors: [{ message: 'PersistedQueryNotFound', extensions: { code: 'PERSISTED_QUERY_NOT_FOUND' } }] }
+    const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
+      try {
+        const ctx = new (options.customContext ?? Context)(req)
+        await ctx.waitForAuth()
+        if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
+        let query: string|undefined = req.body.query
+        const hash = req.body.extensions?.persistedQuery?.sha256Hash
+        if (hash) {
+          if (query) {
+            if (hash !== shasum(query)) throw new HttpError(400, 'provided sha does not match query')
+            persistedQueryCache.set(hash, query)
+          } else {
+            query = persistedQueryCache.get(hash)
+            if (!query) {
+              return { errors: [{ message: 'PersistedQueryNotFound', extensions: { code: 'PERSISTED_QUERY_NOT_FOUND' } }] }
+            }
           }
         }
+        const parsedQuery = await parsedQueryCache.get(query)
+        if (parsedQuery instanceof ParseError) {
+          console.error(parsedQuery.toString())
+          return { errors: parsedQuery.errors }
+        }
+        const start = new Date()
+        const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
+        if (ret?.errors?.length) {
+          if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
+          console.error(new ExecutionError(req.body.query, ret.errors).toString())
+        }
+        if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
+        return ret
+      } catch (e: any) {
+        if (e instanceof HttpError) {
+          await res.status(e.statusCode).send({ errors: [{ message: e.message, extensions: { authenticationError: e.statusCode === 401 } }] })
+        } else {
+          throw e
+        }
       }
-      const parsedQuery = await parsedQueryCache.get(query)
-      if (parsedQuery instanceof ParseError) {
-        console.error(parsedQuery.toString())
-        return { errors: parsedQuery.errors }
-      }
-      const start = new Date()
-      const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
-      if (ret?.errors?.length) console.error(new ExecutionError(req.body.query, ret.errors).toString())
-      if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') console.info(`${new Date().getTime() - start.getTime()}ms`, req.body.operationName || req.body.query)
-      return ret
     }
 
     for (const path of options.gqlEndpoint) {

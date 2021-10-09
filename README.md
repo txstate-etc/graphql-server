@@ -69,6 +69,7 @@ You might notice above that I used `this.loaders` instead of `this.ctx.loaders`,
 * `this.loaders` for your dataloader-factory instance, a tiny bit easier than `this.ctx.loaders`
 * `this.auth` for the user object provided by authentication, over `this.ctx.auth`
 * `this.timing` for development logging, over `this.ctx.timing`
+* `this.requireAuth` to interrupt execution and signal the UI that the user needs to log in
 
 So when you need access to data, no matter whether you are in a resolver or another model's service, you can obtain the service of your choice from the context.
 
@@ -110,7 +111,7 @@ server.start({
   customContext: CookieContext
 })
 ```
-`authFromReq`, if you write it, should return an object for `ctx.auth` or `undefined` if authentication could not be established. It can be async or return a promise if you need to do a lookup, like searching a database for a session id.
+`authFromReq`, if you write it, should return an object for `ctx.auth` or `undefined` if authentication could not be established (do NOT return an object with an empty user id!). It can be async or return a promise if you need to do a lookup, like searching a database for a session id.
 
 Keep in mind that if you add brand new methods to your custom Context class, you'll need to reference your class in every resolver after `@Ctx()`:
 ```typescript
@@ -120,6 +121,11 @@ async authors (@Ctx() ctx: CustomContext, @Root() book: Book) {
 }
 ```
 If all you've done is replace `authFromReq` or `tokenFromReq`, this isn't necessary because all the types are compatible and the context object you'll receive will still be an instance of whatever you passed as `customContext`.
+### Enforcing/detecting authentication
+As documented above, the `send401` option can be set to make sure your entire API require authentication. If your API is partially public, you'll want to keep this false. Then you can simply call `ctx.requireAuth()` in any resolver that requires authentication or `this.requireAuth()` in any service method.
+
+Your clients will be able to detect an authentication problem by checking whether `errors[0].authenticationError` in the response data is `true`. They may need to redirect their user to a login screen.
+
 ## Authorization
 Generally speaking, there are two kinds of authorization:
 * User-based
@@ -187,6 +193,22 @@ class UserService extends BaseService {
   }
 }
 ```
+### Extending ValidatedResponse
+GraphQL mutations are encouraged to return an object, usually the object which was just mutated. To do
+this, you would need to extend the `ValidatedResponse` to add your return object.
+```typescript
+@ObjectType()
+export class BookValidatedResponse {
+  @Field(type => Book)
+  book: Book
+
+  constructor (args: ValidatedResponseArgs & { book: Book }) {
+    super(args)
+    this.book = args.book
+  }
+}
+```
+### Convienence Assertions
 `ValidatedResponse` also has several convenience methods to help you quickly make assertions, and any that fail will set `success` to `false` and add an appropriate message against the correct `arg`.
 ```typescript
   async createObject(args: CreateObjectArguments) {

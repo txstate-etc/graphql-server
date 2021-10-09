@@ -19,6 +19,10 @@ export abstract class BaseService<AuthType = any> {
   timing (...messages: string[]) {
     return this.ctx.timing(...messages)
   }
+
+  requireAuth () {
+    return this.ctx.requireAuth()
+  }
 }
 
 export abstract class AuthorizedService<AuthType = any> extends BaseService<AuthType> {

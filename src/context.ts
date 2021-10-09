@@ -1,6 +1,7 @@
 import { DataLoaderFactory } from 'dataloader-factory'
 import { FastifyRequest } from 'fastify'
 import jwt from 'jsonwebtoken'
+import { AuthError } from './errors'
 import { BaseService } from './service'
 
 export type Type<T> = new (...args: any[]) => T
@@ -53,5 +54,9 @@ export class Context<AuthType = any> {
     const now = new Date()
     console.debug(now.getTime() - (this.lasttime ?? now).getTime(), ...messages)
     this.lasttime = now
+  }
+
+  requireAuth () {
+    if (this.auth == null) throw new AuthError()
   }
 }
