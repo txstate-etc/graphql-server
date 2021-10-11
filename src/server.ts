@@ -44,7 +44,7 @@ export interface GQLRequest { Body: { operationName: string, query: string, vari
 class DevLogger {
   info (msg: any) {
     if (msg.res) {
-      console.log(`${Math.round(msg.responseTime)}ms`)
+      console.log(`${Math.round(msg.responseTime)}ms ${msg.res.gqlInfo?.query as string ?? ''}`)
     } else if (!msg.req) {
       console.info(msg)
     }
