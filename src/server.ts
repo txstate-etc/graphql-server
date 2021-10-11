@@ -69,8 +69,8 @@ export class GQLServer extends Server {
                 return {
                   method: request.method,
                   url: request.url,
-                  path: request.routerPath,
-                  params: request.params
+                  params: request.params,
+                  traceparent: request.headers.traceparent
                 }
               },
               res (reply) {
