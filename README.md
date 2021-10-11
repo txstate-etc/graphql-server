@@ -233,6 +233,11 @@ The convenience methods are:
   * error message for strings `Character maximum exceeded.` or `Character minimum not met.`
   * error message for arrays `Too many entries.` or `Not enough entries.`
 
+## Logging
+Logging is pre-configured for you using `fastify` and `pino`. Log entries are in JSON format. The request complete log entry includes GraphQL-specific properties recording the query, operation name, and the contents of `ctx.auth`.
+
+When `NODE_ENV` is set to `development`, the request log is mostly disabled, only printing the response time and query for each. Errors will be logged directly to the console instead of in JSON format, for much better readability with proper line breaks.
+
 ## Federation
 If your GraphQL API is intended to be a member of a federation gateway, graphql-server provides some
 extra support for you. When you set the option `federated: true`, it will automatically add the federation directives and the `_service` and `_entities` resolvers based on your usage of the directives (more on that below).

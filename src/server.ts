@@ -36,16 +36,54 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   customContext?: Type<CustomContext>
   send401?: boolean
   federated?: boolean
-  after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<any>
+  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
 
+class DevLogger {
+  info (msg: any) {
+    if (msg.res) {
+      console.log(`${Math.round(msg.responseTime)}ms`)
+    } else if (!msg.req) {
+      console.info(msg)
+    }
+  }
+
+  error (msg: any) { console.error(msg) }
+  debug (msg: any) { console.debug(msg) }
+  fatal (msg: any) { console.error(msg) }
+  warn (msg: any) { console.warn(msg) }
+  trace (msg: any) { console.trace(msg) }
+  child (msg: any) { return new DevLogger() }
+}
 const authErrorRegex = /authentication/i
 async function doNothing () {}
 export class GQLServer extends Server {
   constructor (config?: FastifyTxStateOptions) {
-    super({ logger: process.env.NODE_ENV !== 'development', ...config })
+    super({
+      logger: (process.env.NODE_ENV !== 'development'
+        ? {
+            serializers: {
+              req (request) {
+                return {
+                  method: request.method,
+                  url: request.url,
+                  path: request.routerPath,
+                  params: request.params
+                }
+              },
+              res (reply) {
+                return {
+                  statusCode: reply.statusCode,
+                  ...((reply as any).gqlInfo ? (reply as any).gqlInfo : {})
+                }
+              }
+            }
+          }
+        : new DevLogger()),
+      ...config
+    })
   }
 
   public async start (options?: number | GQLStartOpts) {
@@ -111,19 +149,20 @@ export class GQLServer extends Server {
         }
         const parsedQuery = await parsedQueryCache.get(query)
         if (parsedQuery instanceof ParseError) {
-          console.error(parsedQuery.toString())
+          req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
+        const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
+        (res as any).gqlInfo = { auth: ctx.auth, operationName, query }
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
         if (ret?.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
-          console.error(new ExecutionError(req.body.query, ret.errors).toString())
+          req.log.error(new ExecutionError(query, ret.errors).toString())
         }
-        if (req.body.operationName !== 'IntrospectionQuery' && (parsedQuery.definitions[0] as OperationDefinitionNode).name?.value !== 'IntrospectionQuery') {
+        if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          console.info(`${queryTime}ms`, req.body.operationName || req.body.query)
-          options.after!(queryTime, req.body.operationName, req.body.query, req.body.variables).catch(console.error)
+          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables).catch(res.log.error)
         }
         return ret
       } catch (e: any) {

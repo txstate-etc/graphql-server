@@ -12,6 +12,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.bookservice
+    environment:
+      NODE_ENV: development
     logging:
       driver: none
   basicbookservice:
