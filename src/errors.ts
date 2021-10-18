@@ -55,9 +55,9 @@ export class ValidatedResponse {
   @Field(type => [MutationMessage])
   messages: MutationMessage[]
 
-  constructor (config: ValidatedResponseArgs) {
-    this.success = !!config.success
-    this.messages = config.messages ?? []
+  constructor (config?: ValidatedResponseArgs) {
+    this.success = !!config?.success
+    this.messages = config?.messages ?? []
   }
 
   // push message onto messages array and mark not a success if it's fatal
