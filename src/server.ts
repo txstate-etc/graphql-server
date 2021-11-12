@@ -9,7 +9,7 @@ import { buildSchema, BuildSchemaOptions } from 'type-graphql'
 import { Context, Type } from './context'
 import { ExecutionError, ParseError, AuthError } from './errors'
 import { buildFederationSchema } from './federation'
-import { shasum } from './util'
+import { NoIntrospection, shasum } from './util'
 
 interface PlaygroundSettings {
   'general.betaUpdates'?: boolean
@@ -36,6 +36,7 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   customContext?: Type<CustomContext>
   send401?: boolean
   federated?: boolean
+  introspection?: boolean
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
 }
 
@@ -93,6 +94,7 @@ export class GQLServer extends Server {
     options.playgroundSettings ??= {}
     options.playgroundSettings['schema.polling.enable'] ??= false
     options.after ??= doNothing
+    options.introspection ??= true
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
@@ -116,9 +118,10 @@ export class GQLServer extends Server {
     if (options.federated) {
       schema = buildFederationSchema(schema)
     }
+    const validateRules = options.introspection && process.env.GRAPHQL_INTROSPECTION !== 'false' ? [] : [NoIntrospection]
     const parsedQueryCache = new Cache(async (query: string) => {
       const parsedQuery = parse(query)
-      const errors = validate(schema, parsedQuery)
+      const errors = validate(schema, parsedQuery, validateRules)
       if (errors.length) return new ParseError(query, errors)
       return parsedQuery
     }, {
