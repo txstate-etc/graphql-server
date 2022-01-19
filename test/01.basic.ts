@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios'
 import { expect } from 'chai'
+import { sleep } from 'txstate-utils'
 
 const bookclient = axios.create({
   baseURL: 'http://bookservice'
@@ -40,8 +41,49 @@ export async function gatewayQuery<T = any> (query: string, variables?: any) {
   return await gqlQuery<T>(gatewayclient, query, variables)
 }
 
-before(async () => {
-  await new Promise(resolve => setTimeout(resolve, 1000))
+before(async function () {
+  const timeOut = 30000
+  this.timeout(timeOut)
+  const start = new Date()
+  while (true) {
+    try {
+      await basicBookQuery('{ books { title } }')
+      break
+    } catch {
+      if (new Date().getTime() - start.getTime() > timeOut) break
+      else await sleep(150)
+    }
+  }
+
+  while (true) {
+    try {
+      await bookQuery('{ books { title } }')
+      break
+    } catch {
+      if (new Date().getTime() - start.getTime() > timeOut) break
+      else await sleep(150)
+    }
+  }
+
+  while (true) {
+    try {
+      await libraryQuery('{ libraries { id } }')
+      break
+    } catch {
+      if (new Date().getTime() - start.getTime() > timeOut) break
+      else await sleep(150)
+    }
+  }
+
+  while (true) {
+    try {
+      await await gatewayQuery('{ books { title } }')
+      break
+    } catch {
+      if (new Date().getTime() - start.getTime() > timeOut) break
+      else await sleep(150)
+    }
+  }
 })
 
 describe('basic tests', function () {
