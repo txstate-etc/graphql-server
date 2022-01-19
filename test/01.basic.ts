@@ -42,12 +42,16 @@ export async function gatewayQuery<T = any> (query: string, variables?: any) {
 }
 
 before(async function () {
-  const timeOut = 30000
+  // Making sure all services are up in order
+  const timeOut = 50000
+  let bookUp = false
+  let libUp = false
   this.timeout(timeOut)
   const start = new Date()
   while (true) {
     try {
       await basicBookQuery('{ books { title } }')
+      console.log('non-federated basic book service is up')
       break
     } catch {
       if (new Date().getTime() - start.getTime() > timeOut) break
@@ -58,6 +62,8 @@ before(async function () {
   while (true) {
     try {
       await bookQuery('{ books { title } }')
+      bookUp = true
+      console.log('book service is up')
       break
     } catch {
       if (new Date().getTime() - start.getTime() > timeOut) break
@@ -68,6 +74,8 @@ before(async function () {
   while (true) {
     try {
       await libraryQuery('{ libraries { id } }')
+      libUp = true
+      console.log('library service is up')
       break
     } catch {
       if (new Date().getTime() - start.getTime() > timeOut) break
@@ -76,12 +84,15 @@ before(async function () {
   }
 
   while (true) {
-    try {
-      await await gatewayQuery('{ books { title } }')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
+    if (libUp && bookUp) {
+      try {
+        await gatewayQuery('{ books { title } }')
+        console.log('gateway service is up')
+        break
+      } catch {
+        if (new Date().getTime() - start.getTime() > timeOut) break
+        else await sleep(150)
+      }
     }
   }
 })

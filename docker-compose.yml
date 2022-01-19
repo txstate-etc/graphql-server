@@ -22,6 +22,7 @@ services:
       dockerfile: Dockerfile.bookservice
     environment:
       WITHOUT_FEDERATION: 'true'
+      GRAPHQL_INTROSPECTION: 'false'
     logging:
       driver: none
   gateway:
