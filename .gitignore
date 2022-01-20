@@ -106,3 +106,4 @@ dist
 lib
 package-lock.json
 dist
+docker-compose.override.yml
