@@ -29,7 +29,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.apollo
-    restart: on-failure
+    restart: on-failure:5
     # logging:
     #   driver: none
     ports:

@@ -6,17 +6,6 @@ services:
   basicbookservice:
     ports: 
       - 82:80
-  gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile.apollo
-    # logging:
-    #   driver: none
-    ports:
-      - 80:80
-    depends_on:
-      - bookservice
-      - libraryservice
   libraryservice:
     ports: 
       - 83:80
