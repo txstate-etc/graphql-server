@@ -1,8 +1,10 @@
+import { createPublicKey, createSecretKey, KeyObject } from 'crypto'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { FastifyRequest } from 'fastify'
-import jwt from 'jsonwebtoken'
+import { jwtVerify } from 'jose'
 import { AuthError } from './errors'
 import { BaseService } from './service'
+// import { createSecretKey } from 'crypto'
 
 export type Type<T> = new (...args: any[]) => T
 
@@ -11,9 +13,21 @@ export class Context<AuthType = any> {
   public auth?: AuthType
   protected serviceInstances: Map<string, any>
   public loaders: DataLoaderFactory<Context>
-  protected jwtVerifyKey: string|undefined = process.env.JWT_SECRET_VERIFY ?? process.env.JWT_SECRET
+  protected jwtVerifyKey: KeyObject|undefined
+  // app is usually the client_id field pulled from that Authentication bearer
+  // jwt token, but can be any field that identifies the service making the
+  // request on behalf of the user.
 
   constructor (req?: FastifyRequest) {
+    let secret = process.env.JWT_SECRET_VERIFY
+    if (secret != null) {
+      this.jwtVerifyKey = createPublicKey(secret)
+    } else {
+      secret = process.env.JWT_SECRET
+      if (secret != null) {
+        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'base64'))
+      }
+    }
     this.loaders = new DataLoaderFactory(this)
     this.serviceInstances = new Map()
     this.authPromise = this.authFromReq(req)
@@ -24,13 +38,13 @@ export class Context<AuthType = any> {
     return m?.[1]
   }
 
-  authFromReq (req?: FastifyRequest): AuthType|Promise<AuthType>|undefined {
+  async authFromReq (req?: FastifyRequest): Promise<AuthType|undefined> {
     const token = this.tokenFromReq(req)
     if (token) {
       if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
       try {
-        const payload = jwt.verify(token, this.jwtVerifyKey) as unknown as AuthType
-        return payload
+        const payload = await jwtVerify(token, this.jwtVerifyKey) as any
+        return payload.payload as unknown as AuthType
       } catch (e) {
         console.error(e)
         return undefined

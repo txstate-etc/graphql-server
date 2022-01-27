@@ -6,6 +6,7 @@ import LRU from 'lru-cache'
 import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, BuildSchemaOptions } from 'type-graphql'
+import { composeQueryDigest, QueryDigest } from './querydigest'
 import { Context, Type } from './context'
 import { ExecutionError, ParseError, AuthError } from './errors'
 import { buildFederationSchema } from './federation'
@@ -37,6 +38,8 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   send401?: boolean
   federated?: boolean
   introspection?: boolean
+  queryDigest?: boolean
+  queryDigestWhitelist?: Set<string>
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
 }
 
@@ -95,6 +98,8 @@ export class GQLServer extends Server {
     options.playgroundSettings['schema.polling.enable'] ??= false
     options.after ??= doNothing
     options.introspection ??= true
+    options.queryDigest ??= false
+    options.queryDigestWhitelist ??= new Set<string>()
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
@@ -132,16 +137,36 @@ export class GQLServer extends Server {
       max: 1024 * 1024,
       length: (entry: string) => entry.length
     })
+    const persistedQueryDigestCache = new LRU({
+      max: 2024 * 32,
+      length: (entry: string) => entry.length
+    })
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new (options.customContext ?? Context)(req)
         await ctx.waitForAuth()
+        console.log('CONTEXT "%s"', JSON.stringify(ctx.auth))
         if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         let query: string|undefined = req.body.query
+        if (options.queryDigest) {
+          if (ctx.auth?.client_id == null) {
+            throw new HttpError(401, 'request requires authentication with client service')
+          } else if (!(options.queryDigestWhitelist?.has(ctx.auth.client_id))) {
+            const qd = new QueryDigest(req)
+            if (qd.jwtToken == null) throw new HttpError(401, 'request requires signed query digest')
+            let digest = persistedQueryDigestCache.get(qd.jwtToken)
+            if (digest == null) {
+              digest = await qd.getDigest()
+            }
+            if (digest == null) throw new HttpError(401, 'request contains a missing or invalid query digest')
+            if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(401, 'request contains a mismatched client service or query')
+            persistedQueryDigestCache.set(qd.jwtToken, digest)
+          }
+        }
         const hash = req.body.extensions?.persistedQuery?.sha256Hash
         if (hash) {
           if (query) {
-            if (hash !== shasum(query)) throw new HttpError(400, 'provided sha does not match query')
+            if (hash !== shasum(query)) throw new HttpError(401, 'provided sha does not match query')
             persistedQueryCache.set(hash, query)
           } else {
             query = persistedQueryCache.get(hash)

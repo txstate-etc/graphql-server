@@ -3,10 +3,42 @@ services:
   test:
     build:
       context: .
+    environment:
+      # JWT keys are for testing only and not to be used for applications
+      JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
+      JWT_QUERY_DIGEST_PRIVATE_KEY: |
+        -----BEGIN RSA PRIVATE KEY-----
+        MIIEogIBAAKCAQEA1bxn+S8FHQrbHhlMvOSxGAcs1IQmbCax5WgrjmDiJ1Ukqu7m
+        eqRQF3Gt37JMYdOnILbm71pLaHgRoR+qaBvDo5M52OnsEbazGDTZZbgwTfNAIL1+
+        RNNLDVPRRHWDwkfRE+TohZ0fmNCFuNeBqTRE8ueKmq2TLNoad4TvIP5ZTcHGAK+H
+        uLoetwIGA6lPgAGikK0bHIAtD/bxHzSF5Rx7jXSu5Q2EFu29JanQZ+5SHyYLMDNP
+        +mOy1dzL3GmcCiNUAvhTQIDLpjeNa7/2QRj3CjThD+CTSvf0YGkRpL8LUt3qFBp+
+        5clEHZgo5rNIUg1AcxJP3d34tQRb9mgvcU0ZbQIDAQABAoIBAFBCucCG+aKYSwQY
+        eAqOzjm5qAn9vffq5+6/mWuT0hj3DhfqMj5nqXPESoiwCaLKuf288Sd8fsiyHdyl
+        aXZCxsqMJLLh1LYqJ0K1xdU+v1TmPXSN8/agaZSNnw3YGyw/j7Gqye4yvITD+RMa
+        SiRh7mpQrGm9OIElPb8X+jwnhx19MMTWi2p+UBZ9ONUAlbIQ9HcqKvy7BTioO17T
+        0pIUtRW1y80mXX8VfQOIl7Ih+iHSSoPt2sEhSOx6wUu7UEcfj1w/RoGMjlahYAJG
+        JONIxWrYEkPZRRso2npryoz9H8OCnl3qPBL0VZVISPmh7fgbownv6Xwv8uL3Q3Ta
+        ymumSEECgYEA74brpooCA5e9qq3Pxp1xWZCUdDt/XBYX5VNfh77WToiFm6j72pEr
+        7a9SsQNqFnF9SLa/+gmVUA7FoTbLM8rSvfeAnIXHQbVQetC8rkBvnMxa0DDVwnGt
+        pGMDOtvSY4HBocgKmgeB/7y1CK3J0nZcwdm4v2hoq0jWV/d3EB6cLgkCgYEA5G9p
+        YI7WyV9qJRh2KjewZt/dC5Wbf6eIVRm2OqZwCxUsTtnECKA10Mh7FLZdc1/N3xlk
+        XsBkwrW+KsRHQcEdtsW5YsuWEXhn2KB7mkpgJ6DNt57dc7PNB/4qLqe5SAFaLV7X
+        o3zt/TsbhjpWivQeOgLHBeZEMUkKD5qEB+R7aUUCgYAExfGIPhPQMoPrFM+hK54I
+        pOLwdgcRtLcBMOokcF8g7YOMGI/8SQxRDj9dm63PiK9wdYPZ3bsF/2Vc0xS1kYMl
+        mfsMI3ZXDt/tsp8v8cTHoSLmJzL7Tvyg3ABCegL1TK6pJK1haGjkycPpylzNPuKW
+        UlpmJhR/5VGwKxRKU/HU0QKBgHwfNWjr9DUzDR/e7MX/wHAFj7wtrHJue5uR/vxb
+        V2IOPScTGHt/Yf5yEL6uYJTCJ8DjsS/y5k0OJ6hhQj6uShD32sWdzYrsm7CPctnh
+        M+IUc/Mj9TxbJDsFlbIIHJrNcUxZzl3dEguYxFno9QFHp+zpeW7xMXh+MWNNGBSZ
+        x5zpAoGADm2X9P+teUauGpBEhTKlSEm3jkZmII/kDR8e/+9UTAxDWNGR+6GAuNqQ
+        ZyE6nGAx8J+ynDtaO71nKuBPDzCzTiKttmUcJKB0jD8PHhLr/uc8Mkj/xH2kznOj
+        5lmtYDcWiWfh+kAHnTl/7xX9XHVjg64CchL50M0jpCyTIZ7XHMg=
+        -----END RSA PRIVATE KEY-----
     depends_on:
       - gateway
       - basicbookservice
       - bookservice
+      - digestbookservice
       - libraryservice
   bookservice:
     build:
@@ -21,8 +53,31 @@ services:
       context: .
       dockerfile: Dockerfile.bookservice
     environment:
+      # JWT keys are for testing only and not to be used for applications
+      JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
       WITHOUT_FEDERATION: 'true'
       GRAPHQL_INTROSPECTION: 'false'
+    logging:
+      driver: none
+  digestbookservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.digestbookservice
+    environment:
+      WITHOUT_FEDERATION: 'true'
+      # JWT keys are for testing only and not used in the library
+      JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
+      JWT_QUERY_DIGEST_PUBLIC_KEY: |
+         -----BEGIN PUBLIC KEY-----
+         MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1bxn+S8FHQrbHhlMvOSx
+         GAcs1IQmbCax5WgrjmDiJ1Ukqu7meqRQF3Gt37JMYdOnILbm71pLaHgRoR+qaBvD
+         o5M52OnsEbazGDTZZbgwTfNAIL1+RNNLDVPRRHWDwkfRE+TohZ0fmNCFuNeBqTRE
+         8ueKmq2TLNoad4TvIP5ZTcHGAK+HuLoetwIGA6lPgAGikK0bHIAtD/bxHzSF5Rx7
+         jXSu5Q2EFu29JanQZ+5SHyYLMDNP+mOy1dzL3GmcCiNUAvhTQIDLpjeNa7/2QRj3
+         CjThD+CTSvf0YGkRpL8LUt3qFBp+5clEHZgo5rNIUg1AcxJP3d34tQRb9mgvcU0Z
+         bQIDAQAB
+         -----END PUBLIC KEY-----
+      QUERY_DIGEST_WHITELIST: whitelisted-service-1,whitelisted-service-2
     logging:
       driver: none
   gateway:

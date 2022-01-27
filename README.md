@@ -99,7 +99,29 @@ async mayView (user: User) {
 ## Authentication
 By default the library assumes it will get a JWT as a bearer token, and it places the entire payload in ctx.auth. If authentication is not included in the request or fails to validate, ctx.auth will be undefined.
 
-The JWT secret can be provided in the `JWT_SECRET` environment variable. If you are using asymmetric signatures, you can put the public key in `JWT_SECRET_VERIFY` and the private key in `JWT_SECRET` (this library does not make use of the private key).
+The JWT base64 encoded secret can be provided in the `JWT_SECRET` environment variable. If you are using asymmetric signatures, you can put the public key in `JWT_SECRET_VERIFY` (this library does not make use of the private key). If both environment variables are set the asymmetric `JWT_SECRET_VERIFY` key is used.
+```bash
+# Examples of how to create keys for context jwt tokens
+# Symetric key
+JWT_SECRET=$(cat /dev/urandom | head -c32 | base64 -)
+# Private and public keys
+JWT_SECRET_SIGN=$(openssl genrsa 2048 2>/dev/null)
+JWT_SECRET_VERIFY=$(echo "$JWT_SECRET_SIGN" | openssl rsa -outform PEM -pubout 2>/dev/null)
+```
+
+## Query Scoping
+Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `queryDigest` option to true queries received by the server will require an associated query digest that scopes the query requested to the client service.
+
+Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` payload of a JWT which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. the private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
+
+When the graphql-server sees a request with query scoping turned on, it will first verify the JWT authn token and pull the client service name found in the `client_id` field of the authentication payload. The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
+```bash
+# Examples of how to create keys used for query digest jwt tokens
+JWT_QUERY_DIGEST_PRIVATE_KEY=$(openssl genrsa 2048 2>/dev/null)
+JWT_QUERY_DIGEST_PUBLIC_KEY=$(echo "$JWT_QUERY_DIGEST_PRIVATE_KEY" | openssl rsa -outform PEM -pubout 2>/dev/null)
+```
+
+Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `queryDigestWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
 
 If you need to support cookies or tokens in the query string or any other sort of scheme, you can subclass the provided `Context` class, override `tokenFromReq` (to retrieve the JWT) or `authFromReq` (to do all the extraction and validation yourself), and pass your subclass in as a configuration option:
 ```typescript
