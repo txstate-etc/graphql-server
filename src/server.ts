@@ -148,19 +148,22 @@ export class GQLServer extends Server {
         console.log('CONTEXT "%s"', JSON.stringify(ctx.auth))
         if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         let query: string|undefined = req.body.query
+        let qd: QueryDigest|undefined
+        let digest: string|undefined
         if (options.queryDigest) {
           if (ctx.auth?.client_id == null) {
             throw new HttpError(401, 'request requires authentication with client service')
           } else if (!(options.queryDigestWhitelist?.has(ctx.auth.client_id))) {
-            const qd = new QueryDigest(req)
+            qd = new QueryDigest(req)
             if (qd.jwtToken == null) throw new HttpError(401, 'request requires signed query digest')
-            let digest = persistedQueryDigestCache.get(qd.jwtToken)
+            digest = persistedQueryDigestCache.get(qd.jwtToken)
             if (digest == null) {
               digest = await qd.getDigest()
             }
             if (digest == null) throw new HttpError(401, 'request contains a missing or invalid query digest')
             if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(401, 'request contains a mismatched client service or query')
-            persistedQueryDigestCache.set(qd.jwtToken, digest)
+            // Set query digest cache AFTER successful query parsing to avoid cache poisoning.
+            // persistedQueryDigestCache.set(qd.jwtToken, digest)
           }
         }
         const hash = req.body.extensions?.persistedQuery?.sha256Hash
@@ -179,6 +182,9 @@ export class GQLServer extends Server {
         if (parsedQuery instanceof ParseError) {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
+        }
+        if (options.queryDigest && qd != null && digest != null) {
+          persistedQueryDigestCache.set(qd.jwtToken, digest)
         }
         const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
         (res as any).gqlInfo = { auth: ctx.auth, operationName, query }
