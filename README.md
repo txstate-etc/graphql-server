@@ -32,7 +32,7 @@ server.start({
 * `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system. See "Federation" below for more info.
 * `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
 * `queryDigest?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `client_id` service and query string.
-* `queryDigestWhitelist?: Set<string`> (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
+* `queryDigestWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
