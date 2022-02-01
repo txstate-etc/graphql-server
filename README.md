@@ -31,8 +31,8 @@ server.start({
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
 * `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system. See "Federation" below for more info.
 * `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
-* `queryDigest?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `client_id` service and query string.
-* `queryDigestWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
+* `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `client_id` service and query string.
+* `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
@@ -112,9 +112,9 @@ JWT_SECRET_VERIFY=$(echo "$JWT_SECRET_SIGN" | openssl rsa -outform PEM -pubout 2
 ```
 
 ## Query Scoping
-Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `queryDigest` option to true queries received by the server will require an associated query digest that scopes the query requested to the client service.
+Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `requireSignedQueries` option to true, queries received by the server will require an associated query digest that scopes the query requested to the client service.
 
-Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` payload of a JWT which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. the private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
+Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` field in the JWT payload, which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. The private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
 
 When the graphql-server sees a request with query scoping turned on, it will first verify the JWT authn token and pull the client service name found in the `client_id` field of the authentication payload. The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
 ```bash
@@ -123,7 +123,7 @@ JWT_QUERY_DIGEST_PRIVATE_KEY=$(openssl genrsa 2048 2>/dev/null)
 JWT_QUERY_DIGEST_PUBLIC_KEY=$(echo "$JWT_QUERY_DIGEST_PRIVATE_KEY" | openssl rsa -outform PEM -pubout 2>/dev/null)
 ```
 
-Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `queryDigestWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
+Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `signedQueriesWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
 
 If you need to support cookies or tokens in the query string or any other sort of scheme, you can subclass the provided `Context` class, override `tokenFromReq` (to retrieve the JWT) or `authFromReq` (to do all the extraction and validation yourself), and pass your subclass in as a configuration option:
 ```typescript

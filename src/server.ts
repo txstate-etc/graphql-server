@@ -38,8 +38,8 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   send401?: boolean
   federated?: boolean
   introspection?: boolean
-  queryDigest?: boolean
-  queryDigestWhitelist?: Set<string>
+  requireSignedQueries?: boolean
+  signedQueriesWhitelist?: Set<string>
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
 }
 
@@ -98,8 +98,8 @@ export class GQLServer extends Server {
     options.playgroundSettings['schema.polling.enable'] ??= false
     options.after ??= doNothing
     options.introspection ??= true
-    options.queryDigest ??= false
-    options.queryDigestWhitelist ??= new Set<string>()
+    options.requireSignedQueries ??= false
+    options.signedQueriesWhitelist ??= new Set<string>()
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
@@ -150,10 +150,10 @@ export class GQLServer extends Server {
         let query: string|undefined = req.body.query
         let qd: QueryDigest|undefined
         let digest: string|undefined
-        if (options.queryDigest) {
+        if (options.requireSignedQueries) {
           if (ctx.auth?.client_id == null) {
             throw new HttpError(401, 'request requires authentication with client service')
-          } else if (!(options.queryDigestWhitelist?.has(ctx.auth.client_id))) {
+          } else if (!(options.signedQueriesWhitelist?.has(ctx.auth.client_id))) {
             qd = new QueryDigest(req)
             if (qd.jwtToken == null) throw new HttpError(401, 'request requires signed query digest')
             digest = persistedQueryDigestCache.get(qd.jwtToken)
@@ -163,7 +163,6 @@ export class GQLServer extends Server {
             if (digest == null) throw new HttpError(401, 'request contains a missing or invalid query digest')
             if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(401, 'request contains a mismatched client service or query')
             // Set query digest cache AFTER successful query parsing to avoid cache poisoning.
-            // persistedQueryDigestCache.set(qd.jwtToken, digest)
           }
         }
         const hash = req.body.extensions?.persistedQuery?.sha256Hash
@@ -183,7 +182,7 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        if (options.queryDigest && qd != null && digest != null) {
+        if (options.requireSignedQueries && qd != null && digest != null) {
           persistedQueryDigestCache.set(qd.jwtToken, digest)
         }
         const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
