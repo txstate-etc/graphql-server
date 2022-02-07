@@ -41,7 +41,10 @@ export class Context<AuthType = any> {
   async authFromReq (req?: FastifyRequest): Promise<AuthType|undefined> {
     const token = this.tokenFromReq(req)
     if (token) {
-      if (!this.jwtVerifyKey) throw new Error('JWT secret has not been set. The server is misconfigured.')
+      if (!this.jwtVerifyKey) {
+        console.log('Received token from user. JWT secret has not been set. The server may be misconfigured.')
+        return undefined
+      }
       try {
         const payload = await jwtVerify(token, this.jwtVerifyKey) as any
         return payload.payload as unknown as AuthType
