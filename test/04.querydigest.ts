@@ -49,7 +49,7 @@ describe('query digest tests', function () {
       expect(e.message).to.include('"authenticationError": true')
     }
   })
-  it('should get a 401 from book digest service. Using a valid non-whitelisted authn token and NO query digest token', async () => {
+  it('should get a 400 from book digest service. Using a valid non-whitelisted authn token and NO query digest token', async () => {
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     try {
@@ -69,10 +69,11 @@ describe('query digest tests', function () {
       await digestBookQuery(query, {}, { headers })
       expect.fail('should have thrown error')
     } catch (e: any) {
-      expect(e.message).to.include('request requires authentication with client service')
+      expect(e.message).to.include('"authenticationError": true')
+      // expect(e.message).to.include('request requires authentication with client service')
     }
   })
-  it('should get a 401 from digest book service. Using an authn token and a query digest token with mismatched client_id', async () => {
+  it('should get a 400 from digest book service. Using an authn token and a query digest token with mismatched client_id', async () => {
     const query = '{ books { title, authors { name } } }'
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const querydigest = queryDigest(whitelistedService, query)
@@ -85,7 +86,7 @@ describe('query digest tests', function () {
       expect(e.message).to.include('request contains a mismatched client service or query')
     }
   })
-  it('should get a 401 from digest book service. Using an authn token and a query digest token with mismatched query', async () => {
+  it('should get a 400 from digest book service. Using an authn token and a query digest token with mismatched query', async () => {
     const query1 = '{ books { title } }'
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const querydigest = queryDigest(nonWhitelistedService, query1)

@@ -137,32 +137,30 @@ export class GQLServer extends Server {
       max: 1024 * 1024,
       length: (entry: string) => entry.length
     })
-    const persistedQueryDigestCache = new LRU({
+    const persistedVerifiedQueryDigestCache = new LRU<string, boolean>({
       max: 2024 * 32,
-      length: (entry: string) => entry.length
+      length: (entry: boolean, key: string) => key.length + 1
     })
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new (options.customContext ?? Context)(req)
         await ctx.waitForAuth()
         console.log('CONTEXT "%s"', JSON.stringify(ctx.auth))
-        if (options.send401 && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+        if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         let query: string|undefined = req.body.query
-        let qd: QueryDigest|undefined
-        let digest: string|undefined
         if (options.requireSignedQueries) {
           if (ctx.auth?.client_id == null) {
             throw new HttpError(401, 'request requires authentication with client service')
           } else if (!(options.signedQueriesWhitelist?.has(ctx.auth.client_id))) {
-            qd = new QueryDigest(req)
-            if (qd.jwtToken == null) throw new HttpError(401, 'request requires signed query digest')
-            digest = persistedQueryDigestCache.get(qd.jwtToken)
-            if (digest == null) {
-              digest = await qd.getDigest()
+            const qd = new QueryDigest(req)
+            if (qd.jwtToken == null) throw new HttpError(400, 'request requires signed query digest')
+            if (!persistedVerifiedQueryDigestCache.get(qd.jwtToken + query)) {
+              const digest = await qd.getVerifiedDigest()
+              if (digest == null) throw new HttpError(400, 'request contains a missing or invalid query digest')
+              if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(400, 'request contains a mismatched client service or query')
+              persistedVerifiedQueryDigestCache.set(qd.jwtToken + query, true)
             }
-            if (digest == null) throw new HttpError(401, 'request contains a missing or invalid query digest')
-            if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(401, 'request contains a mismatched client service or query')
-            // Set query digest cache AFTER successful query parsing to avoid cache poisoning.
           }
         }
         const hash = req.body.extensions?.persistedQuery?.sha256Hash
@@ -181,9 +179,6 @@ export class GQLServer extends Server {
         if (parsedQuery instanceof ParseError) {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
-        }
-        if (options.requireSignedQueries && qd != null && digest != null) {
-          persistedQueryDigestCache.set(qd.jwtToken, digest)
         }
         const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
         (res as any).gqlInfo = { auth: ctx.auth, operationName, query }

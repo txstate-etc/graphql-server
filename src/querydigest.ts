@@ -39,7 +39,7 @@ export class QueryDigest {
     }
   }
 
-  async getDigest (): Promise<string|undefined> {
+  async getVerifiedDigest (): Promise<string|undefined> {
     if (this.jwtToken) {
       try {
         // NOTE: eventually we may get jwtQueryPublicKey from server via async request.
