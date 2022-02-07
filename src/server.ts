@@ -138,14 +138,13 @@ export class GQLServer extends Server {
       length: (entry: string) => entry.length
     })
     const persistedVerifiedQueryDigestCache = new LRU<string, boolean>({
-      max: 2024 * 32,
+      max: 1024 * 1024 * 2,
       length: (entry: boolean, key: string) => key.length + 1
     })
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new (options.customContext ?? Context)(req)
         await ctx.waitForAuth()
-        console.log('CONTEXT "%s"', JSON.stringify(ctx.auth))
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         let query: string|undefined = req.body.query
