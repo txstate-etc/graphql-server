@@ -32,7 +32,7 @@ export class Context<AuthType = any> {
     } else {
       secret = process.env.JWT_SECRET
       if (secret != null) {
-        this.jwtVerifyKey = createSecretKey(secret, 'base64')
+        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'base64'))
       }
     }
     if (process.env.JWT_TRUSTED_ISSUERS) {
