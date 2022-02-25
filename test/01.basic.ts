@@ -27,7 +27,7 @@ const gatewayclient = axios.create({
 export async function signAuth (client_id: string, user: string): Promise<string> {
   const jwtSecret = process.env.JWT_SECRET
   if (jwtSecret == null) throw new Error('JWT secret has not been set. secret is required for testing')
-  const sharedKey = createSecretKey(Buffer.from(jwtSecret, 'base64'))
+  const sharedKey = createSecretKey(Buffer.from(jwtSecret, 'ascii'))
   return await new SignJWT({ client_id })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
