@@ -14,18 +14,21 @@ interface JWTQueryDigest {
 export class QueryDigest {
   // for future reference this public key may allow for rotation with
   // latest list of keys retrieved from a key service.
-  protected jwtQueryPublicKey: KeyLike
+  protected static jwtQueryPublicKey: KeyLike
   public jwtToken?: string
   public clientQueryDigest?: string
 
   constructor (req?: FastifyRequest) {
+    this.jwtToken = this.tokenFromReq(req)
+  }
+
+  static init () {
     const secret = process.env.JWT_QUERY_DIGEST_PUBLIC_KEY
     if (secret != null) {
       this.jwtQueryPublicKey = createPublicKey(secret)
     } else {
       throw new Error('JWT query signature secret has not been set. The server is misconfigured.')
     }
-    this.jwtToken = this.tokenFromReq(req)
   }
 
   tokenFromReq (req?: FastifyRequest) {
@@ -43,7 +46,7 @@ export class QueryDigest {
     if (this.jwtToken) {
       try {
         // NOTE: eventually we may get jwtQueryPublicKey from server via async request.
-        const claim = await jwtVerify(this.jwtToken, this.jwtQueryPublicKey) as any
+        const claim = await jwtVerify(this.jwtToken, QueryDigest.jwtQueryPublicKey) as any
         const payload = claim.payload as unknown as JWTQueryDigest
         return payload.qd
       } catch (e) {

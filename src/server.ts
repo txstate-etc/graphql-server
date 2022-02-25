@@ -142,6 +142,9 @@ export class GQLServer extends Server {
       length: (entry: boolean, key: string) => key.length + 1
     })
     Context.init()
+    if (options.requireSignedQueries) {
+      QueryDigest.init()
+    }
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new (options.customContext ?? Context)(req)
