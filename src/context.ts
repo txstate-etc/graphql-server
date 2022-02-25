@@ -1,10 +1,10 @@
 import { createPublicKey, createSecretKey, KeyObject } from 'crypto'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { FastifyRequest } from 'fastify'
-import { jwtVerify } from 'jose'
+import { createRemoteJWKSet, decodeJwt, JWTPayload, jwtVerify, JWTVerifyGetKey } from 'jose'
+import { toArray } from 'txstate-utils'
 import { AuthError } from './errors'
 import { BaseService } from './service'
-// import { createSecretKey } from 'crypto'
 
 export type Type<T> = new (...args: any[]) => T
 
@@ -13,24 +13,36 @@ export class Context<AuthType = any> {
   public auth?: AuthType
   protected serviceInstances: Map<string, any>
   public loaders: DataLoaderFactory<Context>
-  protected jwtVerifyKey: KeyObject|undefined
+  protected static jwtVerifyKey: KeyObject|undefined
+  protected static issuerKeys = new Map<string, JWTVerifyGetKey|KeyObject>()
   // app is usually the client_id field pulled from that Authentication bearer
   // jwt token, but can be any field that identifies the service making the
   // request on behalf of the user.
 
   constructor (req?: FastifyRequest) {
+    this.loaders = new DataLoaderFactory(this)
+    this.serviceInstances = new Map()
+    this.authPromise = this.authFromReq(req)
+  }
+
+  static init () {
     let secret = process.env.JWT_SECRET_VERIFY
     if (secret != null) {
       this.jwtVerifyKey = createPublicKey(secret)
     } else {
       secret = process.env.JWT_SECRET
       if (secret != null) {
-        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'base64'))
+        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
       }
     }
-    this.loaders = new DataLoaderFactory(this)
-    this.serviceInstances = new Map()
-    this.authPromise = this.authFromReq(req)
+    if (process.env.JWT_TRUSTED_ISSUERS) {
+      const issuers = toArray(JSON.parse(process.env.JWT_TRUSTED_ISSUERS))
+      for (const issuer of issuers) {
+        if (issuer.url) Context.issuerKeys.set(issuer.iss, createRemoteJWKSet(new URL(issuer.url)))
+        else if (issuer.publicKey) Context.issuerKeys.set(issuer.iss, createPublicKey(issuer.publicKey))
+        else if (issuer.secret) Context.issuerKeys.set(issuer.iss, createSecretKey(Buffer.from(issuer.secret, 'ascii')))
+      }
+    }
   }
 
   tokenFromReq (req?: FastifyRequest) {
@@ -41,13 +53,16 @@ export class Context<AuthType = any> {
   async authFromReq (req?: FastifyRequest): Promise<AuthType|undefined> {
     const token = this.tokenFromReq(req)
     if (token) {
-      if (!this.jwtVerifyKey) {
-        console.log('Received token from user. JWT secret has not been set. The server may be misconfigured.')
+      let verifyKey: KeyObject|JWTVerifyGetKey|undefined = Context.jwtVerifyKey
+      const claims = decodeJwt(token)
+      if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
+      if (!verifyKey) {
+        console.info('Received token from user. JWT secret could not be found. The server may be misconfigured.')
         return undefined
       }
       try {
-        const payload = await jwtVerify(token, this.jwtVerifyKey) as any
-        return payload.payload as unknown as AuthType
+        const { payload } = await jwtVerify(token, verifyKey as any)
+        return await this.authFromPayload(payload)
       } catch (e) {
         console.error(e)
         return undefined
@@ -55,6 +70,10 @@ export class Context<AuthType = any> {
     } else {
       return undefined
     }
+  }
+
+  async authFromPayload (payload: JWTPayload) {
+    return payload as unknown as AuthType
   }
 
   async waitForAuth () {
