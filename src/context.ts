@@ -32,7 +32,7 @@ export class Context<AuthType = any> {
     } else {
       secret = process.env.JWT_SECRET
       if (secret != null) {
-        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'base64'))
+        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
       }
     }
     if (process.env.JWT_TRUSTED_ISSUERS) {
@@ -40,6 +40,7 @@ export class Context<AuthType = any> {
       for (const issuer of issuers) {
         if (issuer.url) Context.issuerKeys.set(issuer.iss, createRemoteJWKSet(new URL(issuer.url)))
         else if (issuer.publicKey) Context.issuerKeys.set(issuer.iss, createPublicKey(issuer.publicKey))
+        else if (issuer.secret) Context.issuerKeys.set(issuer.iss, createSecretKey(Buffer.from(issuer.secret, 'ascii')))
       }
     }
   }
@@ -61,7 +62,7 @@ export class Context<AuthType = any> {
       }
       try {
         const { payload } = await jwtVerify(token, verifyKey as any)
-        return this.authFromPayload(payload)
+        return await this.authFromPayload(payload)
       } catch (e) {
         console.error(e)
         return undefined
@@ -71,7 +72,7 @@ export class Context<AuthType = any> {
     }
   }
 
-  authFromPayload (payload: JWTPayload) {
+  async authFromPayload (payload: JWTPayload) {
     return payload as unknown as AuthType
   }
 
