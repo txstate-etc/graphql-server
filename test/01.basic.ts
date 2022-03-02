@@ -50,11 +50,12 @@ export async function signQueryDigest (digest: string): Promise<string> {
     .setIssuer('unified-auth')
     .sign(privateKey)
 }
-async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: any, config?: AxiosRequestConfig) {
+async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: any, config?: AxiosRequestConfig, querySignature?: string) {
   try {
     const resp = await client.post<any>('graphql', {
       query,
-      ...(variables ? { variables } : {})
+      ...(variables ? { variables } : {}),
+      ...(querySignature ? { extensions: { querySignature } } : {})
     },
     config)
     if (resp.data.errors?.length) throw new Error(resp.data.errors[0].message)
@@ -67,11 +68,11 @@ async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: an
 export async function bookQuery<T = any> (query: string, variables?: any) {
   return await gqlQuery<T>(bookclient, query, variables)
 }
-export async function basicBookQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig) {
-  return await gqlQuery<T>(basicbookclient, query, variables, config)
+export async function basicBookQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig, querySignature?: string) {
+  return await gqlQuery<T>(basicbookclient, query, variables, config, querySignature)
 }
-export async function digestBookQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig) {
-  return await gqlQuery<T>(digestbookclient, query, variables, config)
+export async function digestBookQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig, querySignature?: string) {
+  return await gqlQuery<T>(digestbookclient, query, variables, config, querySignature)
 }
 export async function libraryQuery<T = any> (query: string, variables?: any) {
   return await gqlQuery<T>(libraryclient, query, variables)

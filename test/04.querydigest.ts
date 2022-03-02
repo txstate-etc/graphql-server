@@ -7,11 +7,11 @@ describe('query digest tests', function () {
     const query = '{ books { title, authors { name } } }'
     const querydigest = queryDigest(nonWhitelistedService, query)
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest, Authorization: 'bearer ' + authn }
-    const books1 = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers })
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
+    const books1 = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers }, signedquerydigest)
     expect(books1.books.length).to.be.greaterThan(0)
     // This tests query digest cache
-    const books2 = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers })
+    const books2 = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers }, signedquerydigest)
     expect(books2.books.length).to.be.greaterThan(0)
     expect(books1.books.length).equals(books2.books.length)
   })
@@ -25,20 +25,20 @@ describe('query digest tests', function () {
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const querydigest = queryDigest(nonWhitelistedService, 'invalid and non-matching query string')
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest, Authorization: 'bearer ' + authn }
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     // Test was Failing. If server is not setup with JWT key it returns 500;
     // with e.message === 'Internal Server Error'
     // Unless graphql-server code is changed to address this expectation, we
     // will supply it with a JWT key to to make sure it can process requests.
-    const { books } = await basicBookQuery('{ books { title, authors { name } } }', {}, { headers })
+    const { books } = await basicBookQuery('{ books { title, authors { name } } }', {}, { headers }, signedquerydigest)
     expect(books.length).to.be.greaterThan(0)
   })
   it('should get a list of books with authors from digest book service. Using white list auth token but send with bad/non-matching query digest', async () => {
     const authn = await signAuth(whitelistedService, 'testuser')
     const querydigest = queryDigest(whitelistedService, 'invalid and non-matching query string')
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest, Authorization: 'bearer ' + authn }
-    const { books } = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers })
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
+    const { books } = await digestBookQuery('{ books { title, authors { name } } }', {}, { headers }, signedquerydigest)
     expect(books.length).to.be.greaterThan(0)
   })
   it('should get a 401 from book digest service. NO authn NOR query digest tokens', async () => {
@@ -64,9 +64,9 @@ describe('query digest tests', function () {
     const query = '{ books { title, authors { name } } }'
     const querydigest = queryDigest(whitelistedService, query)
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest }
+    const headers: Record<string, string> = {}
     try {
-      await digestBookQuery(query, {}, { headers })
+      await digestBookQuery(query, {}, { headers }, signedquerydigest)
       expect.fail('should have thrown error')
     } catch (e: any) {
       expect(e.message).to.include('"authenticationError": true')
@@ -78,9 +78,9 @@ describe('query digest tests', function () {
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const querydigest = queryDigest(whitelistedService, query)
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest, Authorization: 'bearer ' + authn }
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     try {
-      await digestBookQuery(query, {}, { headers })
+      await digestBookQuery(query, {}, { headers }, signedquerydigest)
       expect.fail('should have thrown error')
     } catch (e: any) {
       expect(e.message).to.include('request contains a mismatched client service or query')
@@ -91,10 +91,10 @@ describe('query digest tests', function () {
     const authn = await signAuth(nonWhitelistedService, 'testuser')
     const querydigest = queryDigest(nonWhitelistedService, query1)
     const signedquerydigest = await signQueryDigest(querydigest)
-    const headers: Record<string, string> = { 'x-query-digest': signedquerydigest, Authorization: 'bearer ' + authn }
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     const query2 = '{ books { title, authors { name } } }'
     try {
-      await digestBookQuery(query2, {}, { headers })
+      await digestBookQuery(query2, {}, { headers }, signedquerydigest)
       expect.fail('should have thrown error')
     } catch (e: any) {
       expect(e.message).to.include('request contains a mismatched client service or query')

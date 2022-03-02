@@ -1,6 +1,7 @@
 import { FastifyRequest } from 'fastify'
 import { jwtVerify, KeyLike } from 'jose'
 import { createHmac, createPublicKey } from 'crypto'
+import { GQLRequest } from './server'
 
 // https://nodejs.org/api/crypto.html#crypto
 export function composeQueryDigest (clientId: string, query: string): string {
@@ -18,7 +19,7 @@ export class QueryDigest {
   public jwtToken?: string
   public clientQueryDigest?: string
 
-  constructor (req?: FastifyRequest) {
+  constructor (req: FastifyRequest<GQLRequest>) {
     this.jwtToken = this.tokenFromReq(req)
   }
 
@@ -31,8 +32,8 @@ export class QueryDigest {
     }
   }
 
-  tokenFromReq (req?: FastifyRequest) {
-    const token = req?.headers['x-query-digest']
+  tokenFromReq (req: FastifyRequest<GQLRequest>) {
+    const token = req.body.extensions?.querySignature
     // If token header is an array then drop as undefined;
     // for security there should only be one x-query-digest header
     if (typeof token === 'string') {

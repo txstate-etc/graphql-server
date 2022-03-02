@@ -43,7 +43,7 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
 }
 
-export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string } } } }
+export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
 
 class DevLogger {
   info (msg: any) {
