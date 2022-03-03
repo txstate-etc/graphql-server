@@ -1,6 +1,6 @@
 {
   "name": "@txstate-mws/graphql-server",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "A simple graphql server designed to work with typegraphql.",
   "exports": {
     "require": "./dist/index.js",
