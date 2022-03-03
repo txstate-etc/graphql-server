@@ -25,14 +25,14 @@ export abstract class BaseService<AuthType = any> {
   }
 }
 
-export abstract class AuthorizedService<AuthType = any, ObjType = any> extends BaseService<AuthType> {
+export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
+  async removeUnauthorized (object: ObjType|undefined): Promise<RedactedType|undefined>
+  async removeUnauthorized (objects: ObjType[]): Promise<RedactedType[]>
   async removeUnauthorized (objects: ObjType[]|ObjType|undefined) {
     if (objects == null) return undefined
     if (Array.isArray(objects)) {
-      return await Promise.all(
-        (await filterAsync(objects, async obj => await this.mayView(obj)))
-          .map(async obj => await this.removeProperties(obj))
-      )
+      const visible = await filterAsync(objects, async obj => await this.mayView(obj))
+      return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[]
     }
     if (await this.mayView(objects)) return await this.removeProperties(objects)
   }
@@ -45,8 +45,8 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any> extends B
    *
    * This method should not mutate the incoming object; return a new object instead.
    */
-  protected async removeProperties (object: ObjType) {
-    return object
+  protected async removeProperties (object: ObjType): Promise<RedactedType> {
+    return object as unknown as RedactedType
   }
 
   abstract mayView (obj: ObjType): Promise<boolean>
