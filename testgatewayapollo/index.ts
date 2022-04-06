@@ -3,7 +3,7 @@ import { ApolloGateway } from '@apollo/gateway'
 import { sleep } from 'txstate-utils'
 
 async function main () {
-  await sleep(500)
+  await sleep(1500)
 
   // Initialize an ApolloGateway instance and pass it an array of
   // your subgraph names and URLs

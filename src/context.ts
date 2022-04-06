@@ -54,13 +54,13 @@ export class Context<AuthType = any> {
     const token = this.tokenFromReq(req)
     if (token) {
       let verifyKey: KeyObject|JWTVerifyGetKey|undefined = Context.jwtVerifyKey
-      const claims = decodeJwt(token)
-      if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
-      if (!verifyKey) {
-        console.info('Received token from user. JWT secret could not be found. The server may be misconfigured.')
-        return undefined
-      }
       try {
+        const claims = decodeJwt(token)
+        if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
+        if (!verifyKey) {
+          console.info('Received token from user. JWT secret could not be found. The server may be misconfigured.')
+          return undefined
+        }
         const { payload } = await jwtVerify(token, verifyKey as any)
         return await this.authFromPayload(payload)
       } catch (e) {
