@@ -40,7 +40,8 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   introspection?: boolean
   requireSignedQueries?: boolean
   signedQueriesWhitelist?: Set<string>
-  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => Promise<any>
+  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => void|Promise<void>
+  send403?: (ctx: CustomContext) => boolean|Promise<boolean>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
@@ -150,7 +151,12 @@ export class GQLServer extends Server {
         const ctx = new (options.customContext ?? Context)(req)
         await ctx.waitForAuth()
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-        if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) throw new HttpError(401, 'all graphql requests require authentication, including introspection')
+        if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) {
+          throw new HttpError(401, 'all graphql requests require authentication, including introspection')
+        }
+        if (options.send403 && !(await options.send403(ctx))) {
+          throw new HttpError(403, 'Not authorized to use this service.')
+        }
         let query: string|undefined = req.body.query
         if (options.requireSignedQueries) {
           if (ctx.auth?.client_id == null) {
@@ -193,7 +199,7 @@ export class GQLServer extends Server {
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables).catch(res.log.error)
+          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables)?.catch(res.log.error)
         }
         return ret
       } catch (e: any) {
