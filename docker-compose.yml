@@ -6,7 +6,9 @@ services:
     environment:
       # JWT keys are for testing only and not to be used for applications
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
-      JWT_QUERY_DIGEST_PRIVATE_KEY: |
+      QUERYSCOPE_CLIENT_ID: non-whitelisted-service
+      QUERYSCOPE_ISSUER: queryscopingtest
+      QUERYSCOPE_PRIVATE_KEY: |
         -----BEGIN RSA PRIVATE KEY-----
         MIIEogIBAAKCAQEA1bxn+S8FHQrbHhlMvOSxGAcs1IQmbCax5WgrjmDiJ1Ukqu7m
         eqRQF3Gt37JMYdOnILbm71pLaHgRoR+qaBvDo5M52OnsEbazGDTZZbgwTfNAIL1+

@@ -4,8 +4,8 @@ import { sleep } from 'txstate-utils'
 import { SignJWT } from 'jose'
 import { createHmac, createPrivateKey, createSecretKey } from 'crypto'
 
-export const whitelistedService = 'whitelisted-service-1'
-export const nonWhitelistedService = 'non-whitelisted-service'
+export const whitelistedClientId = 'whitelisted-service-1'
+export const clientId = process.env.QUERYSCOPE_CLIENT_ID ?? 'non-whitelisted-service'
 
 const bookclient = axios.create({
   baseURL: 'http://bookservice'
@@ -41,7 +41,7 @@ export function queryDigest (clientId: string, query: string) {
 }
 
 export async function signQueryDigest (digest: string): Promise<string> {
-  const jwtPrivateKey = process.env.JWT_QUERY_DIGEST_PRIVATE_KEY
+  const jwtPrivateKey = process.env.QUERYSCOPE_PRIVATE_KEY
   if (jwtPrivateKey == null) throw new Error('JWT private key has not been set. Private key is required for testing')
   const privateKey = createPrivateKey(jwtPrivateKey)
   return await new SignJWT({ qd: digest })
@@ -115,7 +115,7 @@ before(async function () {
   while (true) {
     try {
       const query = '{ books { title } }'
-      const authn = await signAuth(whitelistedService, 'testuser')
+      const authn = await signAuth(whitelistedClientId, 'testuser')
       const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
       await digestBookQuery(query, {}, { headers })
       console.log('non-federated basic book service is up')

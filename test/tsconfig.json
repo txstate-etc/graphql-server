@@ -1,4 +1,7 @@
 {
+  "ts-node": {
+    "compiler": "ttypescript"
+  },
   "compilerOptions": {
     "target": "es2020",
     "module": "commonjs",
@@ -7,6 +10,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "plugins": [
+      {
+        "transform": "./node_modules/queryscope/dist/transformers/tokenizer.js",
+        "type": "raw"
+      }
+    ]
   }
 }

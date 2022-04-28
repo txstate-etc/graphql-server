@@ -38,6 +38,8 @@
     "eslint-config-standard-with-typescript": "^21.0.1",
     "mercurius": "^8.1.1",
     "mocha": "^9.0.3",
+    "queryscope": "^1.0.1",
+    "ttypescript": "^1.5.8",
     "ts-node": "^10.1.0",
     "typescript": "^4.0.5"
   },
