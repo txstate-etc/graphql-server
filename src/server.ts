@@ -154,7 +154,7 @@ export class GQLServer extends Server {
         if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) {
           throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         }
-        if (options.send403 && !(await options.send403(ctx))) {
+        if (options.send403 && await options.send403(ctx)) {
           throw new HttpError(403, 'Not authorized to use this service.')
         }
         let query: string|undefined = req.body.query

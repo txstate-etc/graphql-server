@@ -87,10 +87,8 @@ services:
       context: .
       dockerfile: Dockerfile.apollo
     restart: on-failure:5
-    # logging:
-    #   driver: none
-    ports:
-      - 80:80
+    logging:
+      driver: none
     depends_on:
       - bookservice
       - libraryservice
