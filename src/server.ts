@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import Server, { FastifyTxStateOptions, HttpError } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, validate } from 'graphql'
+import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
 import LRU from 'lru-cache'
 import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
@@ -124,7 +124,7 @@ export class GQLServer extends Server {
     if (options.federated) {
       schema = buildFederationSchema(schema)
     }
-    const validateRules = options.introspection && process.env.GRAPHQL_INTROSPECTION !== 'false' ? [] : [NoIntrospection]
+    const validateRules = [...specifiedRules, ...(options.introspection && process.env.GRAPHQL_INTROSPECTION !== 'false' ? [] : [NoIntrospection])]
     const parsedQueryCache = new Cache(async (query: string) => {
       const parsedQuery = parse(query)
       const errors = validate(schema, parsedQuery, validateRules)

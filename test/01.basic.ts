@@ -157,6 +157,14 @@ describe('basic tests', function () {
     const { books } = await basicBookQuery('{ books { title, authors { name } } }')
     expect(books.length).to.be.greaterThan(0)
   })
+  it('should error when query asks for an unrecognized field', async () => {
+    try {
+      await basicBookQuery('{ books { garbage } }')
+      expect.fail('should have thrown because of unrecognized field')
+    } catch (e: any) {
+      expect(e.message).to.contain('garbage')
+    }
+  })
   it('should get a 401 from an authenticated resolver', async () => {
     try {
       await basicBookQuery('{ books { authTest } }')
