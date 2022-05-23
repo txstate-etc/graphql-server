@@ -48,8 +48,6 @@ services:
       dockerfile: Dockerfile.bookservice
     environment:
       NODE_ENV: development
-    logging:
-      driver: none
   basicbookservice:
     build:
       context: .
@@ -59,8 +57,6 @@ services:
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
       WITHOUT_FEDERATION: 'true'
       GRAPHQL_INTROSPECTION: 'false'
-    logging:
-      driver: none
   digestbookservice:
     build:
       context: .
@@ -80,15 +76,11 @@ services:
          bQIDAQAB
          -----END PUBLIC KEY-----
       QUERY_DIGEST_WHITELIST: whitelisted-service-1,whitelisted-service-2
-    logging:
-      driver: none
   gateway:
     build:
       context: .
       dockerfile: Dockerfile.apollo
     restart: on-failure:5
-    logging:
-      driver: none
     depends_on:
       - bookservice
       - libraryservice
@@ -96,5 +88,3 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.libraryservice
-    logging:
-      driver: none
