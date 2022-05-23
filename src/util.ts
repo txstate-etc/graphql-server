@@ -11,7 +11,7 @@ export function NoIntrospection (context: any) {
     Field (node: any) {
       if (disallowed[node.name.value]) {
         context.reportError(
-          new GraphQLError('GraphQL introspection is not allowed.', [node])
+          new GraphQLError('GraphQL introspection is not allowed.', { nodes: [node] })
         )
       }
     }

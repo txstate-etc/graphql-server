@@ -224,7 +224,7 @@ export function buildFederationSchema (schema: GraphQLSchema) {
 
   // Add all extensions
   const extensionsDocument = {
-    kind: Kind.DOCUMENT,
+    kind: Kind.DOCUMENT as Kind.DOCUMENT,
     definitions: extensions
   }
 

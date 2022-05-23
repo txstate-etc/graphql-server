@@ -44,7 +44,7 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   send403?: (ctx: CustomContext) => boolean|Promise<boolean>
 }
 
-export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
+export interface GQLRequest { Body: { operationName: string, query: string, variables?: Record<string, any>, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
 
 class DevLogger {
   info (msg: any) {
@@ -192,7 +192,13 @@ export class GQLServer extends Server {
         const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
         (res as any).gqlInfo = { auth: ctx.auth, operationName, query }
         const start = new Date()
-        const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
+        const ret = await execute({
+          schema,
+          document: parsedQuery,
+          contextValue: ctx,
+          variableValues: req.body.variables,
+          operationName: req.body.operationName
+        })
         if (ret?.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())
