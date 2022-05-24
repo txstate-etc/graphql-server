@@ -134,13 +134,13 @@ export class GQLServer extends Server {
       freshseconds: 3600,
       staleseconds: 7200
     })
-    const persistedQueryCache = new LRU({
-      max: 1024 * 1024,
-      length: (entry: string) => entry.length
+    const persistedQueryCache = new LRU<string, string>({
+      maxSize: 1024 * 1024,
+      sizeCalculation: (entry: string, key: string) => entry.length + key.length
     })
     const persistedVerifiedQueryDigestCache = new LRU<string, boolean>({
-      max: 1024 * 1024 * 2,
-      length: (entry: boolean, key: string) => key.length + 1
+      maxSize: 1024 * 1024 * 2,
+      sizeCalculation: (entry: boolean, key: string) => key.length + 1
     })
     Context.init()
     if (options.requireSignedQueries) {
