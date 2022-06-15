@@ -8,6 +8,10 @@ import { BaseService } from './service'
 
 export type Type<T> = new (...args: any[]) => T
 
+export function cleanPem (secretOrPem: string|undefined) {
+  return secretOrPem?.replace(/(-+BEGIN [\w\s]+ KEY-+)\s*(.*?)\s*(-+END [\w\s]+ KEY-+)/, '$1\n$2\n$3')
+}
+
 export class Context<AuthType = any> {
   private authPromise: Promise<AuthType|undefined>|AuthType|undefined
   public auth?: AuthType
@@ -26,13 +30,18 @@ export class Context<AuthType = any> {
   }
 
   static init () {
-    let secret = process.env.JWT_SECRET_VERIFY
+    let secret = cleanPem(process.env.JWT_SECRET_VERIFY)
     if (secret != null) {
       this.jwtVerifyKey = createPublicKey(secret)
     } else {
-      secret = process.env.JWT_SECRET
+      secret = cleanPem(process.env.JWT_SECRET)
       if (secret != null) {
-        this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
+        try {
+          this.jwtVerifyKey = createPublicKey(secret)
+        } catch (e: any) {
+          console.info('JWT_SECRET was not a private key, treating it as symmetric.')
+          this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
+        }
       }
     }
     if (process.env.JWT_TRUSTED_ISSUERS) {
@@ -58,13 +67,13 @@ export class Context<AuthType = any> {
         const claims = decodeJwt(token)
         if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
         if (!verifyKey) {
-          console.info('Received token from user. JWT secret could not be found. The server may be misconfigured.')
+          req?.log.info('Received token with issuer:', claims.iss, 'but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.')
           return undefined
         }
         const { payload } = await jwtVerify(token, verifyKey as any)
         return await this.authFromPayload(payload)
       } catch (e) {
-        console.error(e)
+        req?.log.error(e)
         return undefined
       }
     } else {
