@@ -146,6 +146,14 @@ export class GQLServer extends Server {
     if (options.requireSignedQueries) {
       QueryDigest.init()
     }
+
+    (Context as any).executeQuery = async (ctx: Context, query: string, variables?: any, operationName?: string) => {
+      const parsedQuery = await parsedQueryCache.get(query)
+      if (parsedQuery instanceof ParseError) throw new Error(parsedQuery.toString())
+      operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
+      return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
+    }
+
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new (options.customContext ?? Context)(req)
@@ -192,7 +200,7 @@ export class GQLServer extends Server {
         const operationName: string|undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
         (res as any).gqlInfo = { auth: ctx.auth, operationName, query }
         const start = new Date()
-        const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, req.body.operationName)
+        const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, operationName)
         if (ret?.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())

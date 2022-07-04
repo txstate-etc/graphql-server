@@ -19,9 +19,7 @@ export class Context<AuthType = any> {
   public loaders: DataLoaderFactory<Context>
   protected static jwtVerifyKey: KeyObject|undefined
   protected static issuerKeys = new Map<string, JWTVerifyGetKey|KeyObject>()
-  // app is usually the client_id field pulled from that Authentication bearer
-  // jwt token, but can be any field that identifies the service making the
-  // request on behalf of the user.
+  private static executeQuery: (ctx: Context, query: string, variables: any, operationName?: string) => Promise<any>
 
   constructor (req?: FastifyRequest) {
     this.loaders = new DataLoaderFactory(this)
@@ -103,5 +101,9 @@ export class Context<AuthType = any> {
 
   requireAuth () {
     if (this.auth == null) throw new AuthError()
+  }
+
+  async query <T> (query: string, variables?: any): Promise<T> {
+    return await Context.executeQuery(this, query, variables)
   }
 }
