@@ -16,6 +16,9 @@ const digestbookclient = axios.create({
 const basicbookclient = axios.create({
   baseURL: 'http://basicbookservice'
 })
+const authzclient = axios.create({
+  baseURL: 'http://authzservice'
+})
 const libraryclient = axios.create({
   baseURL: 'http://libraryservice'
 })
@@ -74,6 +77,9 @@ export async function basicBookQuery<T = any> (query: string, variables?: any, c
 export async function digestBookQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig, querySignature?: string) {
   return await gqlQuery<T>(digestbookclient, query, variables, config, querySignature)
 }
+export async function authzQuery<T = any> (query: string, variables?: any, config?: AxiosRequestConfig) {
+  return await gqlQuery<T>(authzclient, query, variables, config)
+}
 export async function libraryQuery<T = any> (query: string, variables?: any) {
   return await gqlQuery<T>(libraryclient, query, variables)
 }
@@ -119,6 +125,17 @@ before(async function () {
       const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
       await digestBookQuery(query, {}, { headers })
       console.log('non-federated basic book service is up')
+      break
+    } catch {
+      if (new Date().getTime() - start.getTime() > timeOut) break
+      else await sleep(150)
+    }
+  }
+
+  while (true) {
+    try {
+      await authzQuery('{ people { name } }')
+      console.log('non-federated authorization service is up')
       break
     } catch {
       if (new Date().getTime() - start.getTime() > timeOut) break

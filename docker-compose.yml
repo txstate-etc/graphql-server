@@ -42,6 +42,7 @@ services:
       - bookservice
       - digestbookservice
       - libraryservice
+      - authzservice
   bookservice:
     build:
       context: .
@@ -76,6 +77,14 @@ services:
          bQIDAQAB
          -----END PUBLIC KEY-----
       QUERY_DIGEST_WHITELIST: whitelisted-service-1,whitelisted-service-2
+  authzservice:
+    build:
+      context: .
+      dockerfile: Dockerfile.authzservice
+    environment:
+      WITHOUT_FEDERATION: 'true'
+      # JWT keys are for testing only and not used in the library
+      JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
   gateway:
     build:
       context: .
