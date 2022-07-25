@@ -1,4 +1,4 @@
-import { clone, filterAsync } from 'txstate-utils'
+import { filterAsync } from 'txstate-utils'
 import { Context, Type } from './context'
 
 export abstract class BaseService<AuthType = any> {
@@ -36,9 +36,9 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
     if (objects == null) return undefined
     if (Array.isArray(objects)) {
       const visible = await filterAsync(objects, async obj => await this.mayView(obj))
-      return await Promise.all(visible.map(async obj => await this.removeProperties(clone(obj)))) as RedactedType[]|ObjType[]
+      return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[]|ObjType[]
     }
-    if (await this.mayView(objects)) return await this.removeProperties(clone(objects))
+    if (await this.mayView(objects)) return await this.removeProperties(objects)
   }
 
   /**
@@ -46,6 +46,10 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
    * from unauthorized users. For example, a User record might be visible to everyone
    * for directory purposes, but User.socialSecurityNumber needs to be removed
    * for all but the most privileged viewers.
+   *
+   * Do NOT mutate the object given, it will be cached in various dataloaders and you
+   * don't want to alter the cache. Return a new cloned object instead. You may find
+   * the txstate-utils functions clone, pick, and omit especially helpful.
    */
   protected async removeProperties (object: ObjType): Promise<RedactedType|ObjType> {
     return object as unknown as ObjType

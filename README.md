@@ -162,9 +162,13 @@ Generally speaking, there are two kinds of authorization:
   * Usually simply limits the types of data allowed, like saying that a course catalog application can only see semesters and course details, but no user information.
   * Can be implemented with a TypeGraphQL middleware. This library doesn't provide anything extra.
 
-This library provides a completely opt-in `AuthorizedService` abstract class that you can use instead of `BaseService`. Each `AuthorizedService` must provide a `mayView` method that accepts an instance of the model associated with the service. This will be where we implement user-based authorization for each data type.
+This library provides a completely opt-in `AuthorizedService` abstract class that you can use instead of `BaseService`.
 
-`AuthorizedService` also provides a `removeUnauthorized` method for convenience, which calls `mayView` on each array element and filters out objects the authenticated user should not see. It should be used every time a service method returns an array.
+Each `AuthorizedService` may provide a `mayView` method that accepts an instance of the model associated with the service and returns true only if the current authenticated user should be able to view the object. This is how we implement complex user-based authorization for each data type.
+
+Additionally, each service may provide a non-mutating `removeProperties` method that accepts an instance of the model and removes or anonymizes one or more properties from the object before returning it. Do NOT mutate the input object, it will be in the dataloader cache and shouldn't be altered. Return a cloned object instead.
+
+Finally, `AuthorizedService` provides a `removeUnauthorized` method that your service may use to clean out objects the user shouldn't see. It calls `mayView` and `removeProperties` on each array element and filters out objects and properties the authenticated user should not see. It should be used every time a service method returns an array.
 
 There's nothing here for authorizing mutations; that should generally take place at the beginning of the mutation method in the service class, but can also be broken out into helper methods like `mayCreate` or `mayDelete`.
 

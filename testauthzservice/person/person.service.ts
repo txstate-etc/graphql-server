@@ -35,9 +35,8 @@ export class PersonService extends AuthorizedService {
     } else if (await hostForPerson(requesterId, id)) {
       return object
     } else {
-      // NOTE object supplied was a copy of original so can mutate.
-      object.contact = undefined
-      return object
+      // do not mutate our input
+      return { ...object, contact: undefined }
     }
   }
 }

@@ -1,6 +1,6 @@
 import { Arg, Ctx, FieldResolver, Query, Resolver, Root } from 'type-graphql'
 import { Context, ResolveReference } from '../../src'
-import { Person, PersonFilter } from '../person/person.model'
+import { Person } from '../person/person.model'
 import { PersonService } from '../person/person.service'
 import { Meeting, MeetingFilter } from './meeting.model'
 import { MeetingService } from './meeting.service'
