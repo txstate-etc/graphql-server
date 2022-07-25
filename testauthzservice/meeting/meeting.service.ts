@@ -22,9 +22,9 @@ export class MeetingService extends AuthorizedService {
   }
 
   // If requester has an id then force restriction, otherwise allow all requests to view meetings.
-  protected async mayView(obj: any): Promise<boolean> {
+  protected async mayView (obj: any): Promise<boolean> {
     let requesterId = (await this.ctx.auth)?.sub
-    requesterId = requesterId ? parseInt(requesterId): undefined
-    return (requesterId != null) ? inMeeting((obj as Meeting).id, requesterId): true
+    requesterId = requesterId ? parseInt(requesterId) : undefined
+    return (requesterId != null) ? await inMeeting((obj as Meeting).id, requesterId) : true
   }
 }

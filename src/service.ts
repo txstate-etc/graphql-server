@@ -56,7 +56,7 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
    * from unauthorized users. For example an Address record may only be visible
    * under a certain context where user is looking at their own address. Returning
    * a false would filter out the address object so that an undefined would be
-   * returned or the object would be remove from lists. 
+   * returned or the object would be remove from lists.
    */
   protected async mayView (obj: ObjType): Promise<boolean> {
     return true

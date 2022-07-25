@@ -27,7 +27,7 @@ meetingDb.set(3, {
 // 4 attends no meetings
 
 export async function inMeeting (id: number, person: number): Promise<boolean> {
-  return meetingDb.get(id)?.peopleIds.includes(person) || false
+  return meetingDb.get(id)?.peopleIds.includes(person) ?? false
 }
 
 export async function shareMeeting (person1: number, person2: number): Promise<boolean> {
@@ -40,7 +40,7 @@ export async function shareMeeting (person1: number, person2: number): Promise<b
 }
 
 function isMeetingHost (id: number, person: number): boolean {
-  return meetingDb.get(id)?.hosts.includes(person) || false  
+  return meetingDb.get(id)?.hosts.includes(person) ?? false
 }
 
 export async function hostForPerson (host: number, person: number): Promise<boolean> {

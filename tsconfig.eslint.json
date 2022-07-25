@@ -3,6 +3,7 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
+    "testauthzservice/**/*.ts",
     "testbookservice/**/*.ts",
     "testdigestbookservice/**/*.ts",
     "testgateway/**/*.ts",
