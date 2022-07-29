@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import { signAuth, authzQuery } from './01.basic'
 
-describe('query authz tests for people endpoint', function () {
+describe('query authz tests for direct people endpoint', function () {
   it('should only get self from people endpoint when requesting all people and not part of any meetings', async () => {
     const authn = await signAuth('client_service_test', '4')
     const query = '{ people { id, name, contact } }'
@@ -13,9 +13,9 @@ describe('query authz tests for people endpoint', function () {
   })
   it('should only get self with all fields when requesting self', async () => {
     const authn = await signAuth('client_service_test', '4')
-    const query = '{ people { id, name, contact } }'
+    const query = 'query GetPerson($ids:[Int!]) { people(filter:{ ids:$ids }) { id, name, contact } }'
     const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
-    const data = await authzQuery(query, { ids: [4]}, { headers })
+    const data = await authzQuery(query, { ids: [4] }, { headers })
     expect(data.people.length).equals(1)
     expect(data.people[0].name).equals('Person Four')
     expect(data.people[0].contact).equals('Contact Four')
@@ -31,14 +31,20 @@ describe('query authz tests for people endpoint', function () {
     expect(data.people.filter((person: { id: number }) => person.id === 2)[0].contact).equals('Contact Two')
     expect(data.people.filter((person: { id: number }) => person.id === 3)[0].contact).is.null
   })
+  it('should get no people in returned list when requesting a person id with whom you do NOT attend any meetings', async () => {
+    const authn = await signAuth('client_service_test', '1')
+    const query = 'query GetPersonContact($ids:[Int!]) { people(filter:{ ids:$ids }) { id, contact } }'
+    const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
+    const data = await authzQuery(query, { ids: [4] }, { headers })
+    expect(data.people.length).equals(0)
+  })
 })
-describe('query authz tests for meeting endpoint', function () {
+describe('query authz tests for direct meeting endpoint', function () {
   it('should only get the 2 meetings of which we are a member', async () => {
     const authn = await signAuth('client_service_test', '1')
     const query = '{ meetings { id, title } }'
     const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     const data = await authzQuery(query, {}, { headers })
-    console.log(JSON.stringify(data))
     expect(data.meetings.length).equals(2)
     expect(data.meetings.filter((meeting: { id: number }) => meeting.id === 1)[0].title).equals('Meeting 1')
     expect(data.meetings.filter((meeting: { id: number }) => meeting.id === 3)[0].title).equals('Meeting 3')
@@ -48,7 +54,6 @@ describe('query authz tests for meeting endpoint', function () {
     const query = '{ meetings { id, title } }'
     const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     const data = await authzQuery(query, {}, { headers })
-    console.log(JSON.stringify(data))
     expect(data.meetings.length).equals(1)
     expect(data.meetings[0].title).equals('Meeting 3')
   })
@@ -57,11 +62,7 @@ describe('query authz tests for meeting endpoint', function () {
     const query = '{ meetings { id, title } }'
     const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
     const data = await authzQuery(query, {}, { headers })
-    console.log(JSON.stringify(data))
     expect(data.meetings.length).equals(0)
   })
 })
-//describe('query authz tests for nested meeting/people/meeting and people/meeting/people endpoints', function () {
-//  it('should only get the 2 meetings of which we are a member', async () => {
-//  })
-//})
+
