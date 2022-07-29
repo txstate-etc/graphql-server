@@ -6,5 +6,5 @@ const server = new GQLServer()
 
 server.start({
   resolvers: [PersonResolver, MeetingResolver],
-  federated: !process.env.WITHOUT_FEDERATION,
+  federated: !process.env.WITHOUT_FEDERATION
 }).catch(console.error)
