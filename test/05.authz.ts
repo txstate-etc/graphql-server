@@ -29,7 +29,7 @@ describe('query authz tests for direct people endpoint', function () {
     expect(data.people.length).equals(3)
     expect(data.people.filter((person: { id: number }) => person.id === 1)[0].contact).equals('Contact One')
     expect(data.people.filter((person: { id: number }) => person.id === 2)[0].contact).equals('Contact Two')
-    expect(data.people.filter((person: { id: number }) => person.id === 3)[0].contact).is.null
+    expect(data.people.filter((person: { id: number }) => person.id === 3)[0].contact).to.equal(null)
   })
   it('should get no people in returned list when requesting a person id with whom you do NOT attend any meetings', async () => {
     const authn = await signAuth('client_service_test', '1')
@@ -65,4 +65,3 @@ describe('query authz tests for direct meeting endpoint', function () {
     expect(data.meetings.length).equals(0)
   })
 })
-
