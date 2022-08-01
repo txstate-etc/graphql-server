@@ -22,6 +22,11 @@ personDb.set(4, {
   name: 'Person Four',
   contact: 'Contact Four'
 })
+personDb.set(5, {
+  id: 5,
+  name: 'Person Five',
+  contact: 'Contact Five'
+})
 
 export async function getPeople (filter?: PersonFilter) {
   let people = filter?.ids ? filter.ids.map(id => personDb.get(id)).filter(isNotNull) : Array.from(personDb.values())

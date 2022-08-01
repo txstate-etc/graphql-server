@@ -25,6 +25,12 @@ meetingDb.set(3, {
   peopleIds: [1, 3]
 })
 // 4 attends no meetings
+meetingDb.set(4, {
+  id: 4,
+  title: 'Meeting 4',
+  hosts: [5],
+  peopleIds: [5]
+})
 
 export async function inMeeting (id: number, person: number): Promise<boolean> {
   return meetingDb.get(id)?.peopleIds.includes(person) ?? false
