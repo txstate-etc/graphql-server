@@ -35,7 +35,7 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
   async removeUnauthorized (objects: ObjType[]|ObjType|undefined) {
     if (objects == null) return undefined
     if (Array.isArray(objects)) {
-      const visible = await filterAsync(objects, async obj => await this.mayView(obj))
+      const visible = await filterAsync(objects, async obj => (obj ? await this.mayView(obj) : false))
       return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[]|ObjType[]
     }
     if (await this.mayView(objects)) return await this.removeProperties(objects)
@@ -50,6 +50,8 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
    * Do NOT mutate the object given, it will be cached in various dataloaders and you
    * don't want to alter the cache. Return a new cloned object instead. You may find
    * the txstate-utils functions clone, pick, and omit especially helpful.
+   *
+   * Removing foreign key info in this function can be problematic.
    */
   protected async removeProperties (object: ObjType): Promise<RedactedType|ObjType> {
     return object as unknown as ObjType
