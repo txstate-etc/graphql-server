@@ -24,8 +24,8 @@ server.start({
 
 ## GraphQL Configuration
 * `port?: number` (default 80 or 443 if cert present) - port for your HTTP(S) server to listen to
-* `gqlEndpoint?: string|string[]` (default `/graphql`) - endpoint for graphql queries
-  `playgroundEndpoint?: string|false` (default `/`) - endpoint to access the GraphQL playground to explore the spec and run handwritten queries. `false` to disable.
+* `gqlEndpoint?: string|string[]` (default `/graphql`) - endpoint for graphql queries. NOTE: if behind a reverse proxy that strips off part of the path, you need to set the API_PREFIX environment variable to make the playground and voyager work - e.g. if reverse proxy converts `/api/graphql` to `/graphql`, API_PREFIX should be `/api`
+* `playgroundEndpoint?: string|false` (default `/`) - endpoint to access the GraphQL playground to explore the spec and run handwritten queries. `false` to disable.
 * `voyagerEndpoint?: string|false` (default `/voyager`) - endpoint to access GraphQL Voyager for visualizing your spec. `false` to disable.
 * `customContext?: Type<CustomContext>` (default `Context`) - provide a custom context class for more request-scoped state or different authentication code (more info later).
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.

@@ -106,14 +106,14 @@ export class GQLServer extends Server {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
         res = res.type('text/html')
         const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
-        return pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint![0]).replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
+        return pg.replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0]).replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
       })
     }
     if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
       this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
         res = res.type('text/html')
         const pg = (await readFile(path.join(__dirname, 'voyager.html'))).toString('utf-8')
-        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, options.gqlEndpoint[0]) : pg
+        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
       })
     }
 
