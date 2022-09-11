@@ -30,13 +30,13 @@ export abstract class BaseService<AuthType = any> {
   * the objects before passing them to the removeProperties method.
   */
 export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
-  async removeUnauthorized (object: ObjType|undefined): Promise<RedactedType|ObjType|undefined>
-  async removeUnauthorized (objects: ObjType[]): Promise<RedactedType[]|ObjType[]>
-  async removeUnauthorized (objects: ObjType[]|ObjType|undefined) {
+  async removeUnauthorized (object: ObjType | undefined): Promise<RedactedType | ObjType | undefined>
+  async removeUnauthorized (objects: ObjType[]): Promise<RedactedType[] | ObjType[]>
+  async removeUnauthorized (objects: ObjType[] | ObjType | undefined) {
     if (objects == null) return undefined
     if (Array.isArray(objects)) {
       const visible = await filterAsync(objects, async obj => (obj ? await this.mayView(obj) : false))
-      return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[]|ObjType[]
+      return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[] | ObjType[]
     }
     if (await this.mayView(objects)) return await this.removeProperties(objects)
   }
@@ -53,7 +53,7 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
    *
    * Removing foreign key info in this function can be problematic.
    */
-  protected async removeProperties (object: ObjType): Promise<RedactedType|ObjType> {
+  protected async removeProperties (object: ObjType): Promise<RedactedType | ObjType> {
     return object as unknown as ObjType
   }
 

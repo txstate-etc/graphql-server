@@ -8,17 +8,17 @@ import { BaseService } from './service'
 
 export type Type<T> = new (...args: any[]) => T
 
-export function cleanPem (secretOrPem: string|undefined) {
+export function cleanPem (secretOrPem: string | undefined) {
   return secretOrPem?.replace(/(-+BEGIN [\w\s]+ KEY-+)\s*(.*?)\s*(-+END [\w\s]+ KEY-+)/, '$1\n$2\n$3')
 }
 
 export class Context<AuthType = any> {
-  private authPromise: Promise<AuthType|undefined>|AuthType|undefined
+  private authPromise: Promise<AuthType | undefined> | AuthType | undefined
   public auth?: AuthType
   protected serviceInstances: Map<string, any>
   public loaders: DataLoaderFactory<Context>
-  protected static jwtVerifyKey: KeyObject|undefined
-  protected static issuerKeys = new Map<string, JWTVerifyGetKey|KeyObject>()
+  protected static jwtVerifyKey: KeyObject | undefined
+  protected static issuerKeys = new Map<string, JWTVerifyGetKey | KeyObject>()
   private static executeQuery: (ctx: Context, query: string, variables: any, operationName?: string) => Promise<any>
 
   constructor (req?: FastifyRequest) {
@@ -57,10 +57,10 @@ export class Context<AuthType = any> {
     return m?.[1]
   }
 
-  async authFromReq (req?: FastifyRequest): Promise<AuthType|undefined> {
+  async authFromReq (req?: FastifyRequest): Promise<AuthType | undefined> {
     const token = this.tokenFromReq(req)
     if (token) {
-      let verifyKey: KeyObject|JWTVerifyGetKey|undefined = Context.jwtVerifyKey
+      let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
       try {
         const claims = decodeJwt(token)
         if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)

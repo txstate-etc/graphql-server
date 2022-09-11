@@ -25,7 +25,7 @@ import { specifiedSDLRules } from 'graphql/validation/specifiedRules'
 import { validateSDL } from 'graphql/validation/validate'
 import { printSchemaWithDirectives } from '@graphql-tools/utils'
 
-type TypeNode = TypeDefinitionNode|TypeExtensionNode|DirectiveDefinitionNode
+type TypeNode = TypeDefinitionNode | TypeExtensionNode | DirectiveDefinitionNode
 
 function hasExtensionDirective (node: any) {
   for (const directive of node.directives ?? []) {
