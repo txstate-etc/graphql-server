@@ -54,6 +54,7 @@ services:
       context: .
       dockerfile: Dockerfile.bookservice
     environment:
+      NODE_ENV: development
       # JWT keys are for testing only and not to be used for applications
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
       WITHOUT_FEDERATION: 'true'
@@ -63,6 +64,7 @@ services:
       context: .
       dockerfile: Dockerfile.digestbookservice
     environment:
+      NODE_ENV: development
       WITHOUT_FEDERATION: 'true'
       # JWT keys are for testing only and not used in the library
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
@@ -82,6 +84,7 @@ services:
       context: .
       dockerfile: Dockerfile.authzservice
     environment:
+      NODE_ENV: development
       WITHOUT_FEDERATION: 'true'
       # JWT keys are for testing only and not used in the library
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
@@ -97,3 +100,5 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.libraryservice
+    environment:
+      NODE_ENV: development

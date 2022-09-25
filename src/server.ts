@@ -46,33 +46,23 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
 
-const levels: Record<string, number> = {
-  trace: 1,
-  debug: 2,
-  info: 3,
-  warn: 4,
-  error: 5,
-  fatal: 6
-}
-class DevLogger {
-  level = 'info'
-
-  info (msg: any) {
-    if (levels[this.level] > 3) return
+const devLogger = {
+  level: 'info',
+  info: (msg: any) => {
     if (msg.res) {
-      console.log(`${Math.round(msg.responseTime)}ms ${msg.res.gqlInfo?.query.replace(/[\s]+/g, ' ') as string ?? ''}`)
+      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.gqlInfo?.query.replace(/[\s]+/g, ' ') as string ?? ''}`)
     } else if (!msg.req) {
       console.info(msg)
     }
-  }
+  },
 
-  error (msg: any) { if (levels[this.level] <= 5) console.error(msg) }
-  debug (msg: any) { if (levels[this.level] <= 2) console.debug(msg) }
-  fatal (msg: any) { if (levels[this.level] <= 6) console.error(msg) }
-  warn (msg: any) { if (levels[this.level] <= 4) console.warn(msg) }
-  trace (msg: any) { if (levels[this.level] <= 1) console.trace(msg) }
-  silent (msg: any) {}
-  child (bindings: any, options?: any) { return new DevLogger() }
+  error: (msg: any) => console.error(msg),
+  debug: (msg: any) => console.debug(msg),
+  fatal: (msg: any) => console.error(msg),
+  warn: (msg: any) => console.warn(msg),
+  trace: (msg: any) => console.trace(msg),
+  silent: (msg: any) => {},
+  child (bindings: any, options?: any) { return devLogger }
 }
 const authErrorRegex = /authentication/i
 async function doNothing () {}
@@ -98,7 +88,7 @@ export class GQLServer extends Server {
             }
           }
         }
-        : new DevLogger()),
+        : devLogger),
       ...config
     })
   }
