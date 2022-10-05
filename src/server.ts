@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import Server, { FastifyTxStateOptions, HttpError } from 'fastify-txstate'
+import Server, { devLogger, FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
 import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
 import LRU from 'lru-cache'
@@ -46,23 +46,15 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
 
-const devLogger = {
-  level: 'info',
+export const gqlDevLogger = {
+  ...devLogger,
   info: (msg: any) => {
     if (msg.res) {
-      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.gqlInfo?.query.replace(/[\s]+/g, ' ') as string ?? ''}`)
+      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.extraLogInfo.query?.replace(/[\s]+/g, ' ') ?? `${msg.res.statusCode} ${msg.res.request.method} ${msg.res.request.url}`}`)
     } else if (!msg.req) {
       console.info(msg)
     }
-  },
-
-  error: (msg: any) => console.error(msg),
-  debug: (msg: any) => console.debug(msg),
-  fatal: (msg: any) => console.error(msg),
-  warn: (msg: any) => console.warn(msg),
-  trace: (msg: any) => console.trace(msg),
-  silent: (msg: any) => {},
-  child (bindings: any, options?: any) { return devLogger }
+  }
 }
 const authErrorRegex = /authentication/i
 async function doNothing () {}
@@ -70,25 +62,8 @@ export class GQLServer extends Server {
   constructor (config?: FastifyTxStateOptions) {
     super({
       logger: (process.env.NODE_ENV !== 'development'
-        ? {
-          serializers: {
-            req (request) {
-              return {
-                method: request.method,
-                url: request.url,
-                params: request.params,
-                traceparent: request.headers.traceparent
-              }
-            },
-            res (reply) {
-              return {
-                statusCode: reply.statusCode,
-                ...((reply as any).gqlInfo ? (reply as any).gqlInfo : {})
-              }
-            }
-          }
-        }
-        : devLogger),
+        ? prodLogger
+        : gqlDevLogger),
       ...config
     })
   }
@@ -199,8 +174,8 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        const operationName: string | undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value;
-        (res as any).gqlInfo = { auth: ctx.auth, operationName, query }
+        const operationName: string | undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
+        res.extraLogInfo = { ...res.extraLogInfo, auth: ctx.auth, operationName, query }
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, operationName)
         if (ret?.errors?.length) {
