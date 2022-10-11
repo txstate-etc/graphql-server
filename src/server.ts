@@ -1,7 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import Server, { devLogger, FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, lexicographicSortSchema, OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
+import { execute, GraphQLError, lexicographicSortSchema, OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
 import LRU from 'lru-cache'
 import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
@@ -40,7 +40,7 @@ export interface GQLStartOpts <CustomContext extends Context = Context> extends 
   introspection?: boolean
   requireSignedQueries?: boolean
   signedQueriesWhitelist?: Set<string>
-  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any) => void | Promise<void>
+  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined) => void | Promise<void>
   send403?: (ctx: CustomContext) => boolean | Promise<boolean>
 }
 
@@ -184,7 +184,7 @@ export class GQLServer extends Server {
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables)?.catch(res.log.error)
+          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(res.log.error)
         }
         return ret
       } catch (e: any) {
