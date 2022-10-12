@@ -184,7 +184,7 @@ export class GQLServer extends Server {
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(res.log.error)
+          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => res.log.error(e))
         }
         return ret
       } catch (e: any) {
