@@ -2,7 +2,7 @@ import { createPublicKey, createSecretKey, KeyObject } from 'crypto'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { FastifyRequest } from 'fastify'
 import { createRemoteJWKSet, decodeJwt, JWTPayload, jwtVerify, JWTVerifyGetKey } from 'jose'
-import { toArray } from 'txstate-utils'
+import { Cache, toArray } from 'txstate-utils'
 import { AuthError } from './errors'
 import { BaseService } from './service'
 
@@ -20,6 +20,25 @@ export class Context<AuthType = any> {
   protected static jwtVerifyKey: KeyObject | undefined
   protected static issuerKeys = new Map<string, JWTVerifyGetKey | KeyObject>()
   private static executeQuery: (ctx: Context, query: string, variables: any, operationName?: string) => Promise<any>
+
+  protected static tokenCache = new Cache(async (token: string, { req, ctx }: { req?: FastifyRequest, ctx: Context }) => {
+    const logger = req?.log ?? console
+    let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
+    try {
+      const claims = decodeJwt(token)
+      if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
+      if (!verifyKey) {
+        logger.info('Received token with issuer:', claims.iss, 'but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.')
+        return undefined
+      }
+      const { payload } = await jwtVerify(token, verifyKey as any)
+      return await ctx.authFromPayload(payload)
+    } catch (e: any) {
+      // squelch errors about bad tokens, we can already see the 401 in the log
+      if (e.code !== 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') logger.error(e)
+      return undefined
+    }
+  }, { freshseconds: 10 })
 
   constructor (req?: FastifyRequest) {
     this.loaders = new DataLoaderFactory(this)
@@ -59,24 +78,8 @@ export class Context<AuthType = any> {
 
   async authFromReq (req?: FastifyRequest): Promise<AuthType | undefined> {
     const token = this.tokenFromReq(req)
-    if (token) {
-      let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
-      try {
-        const claims = decodeJwt(token)
-        if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
-        if (!verifyKey) {
-          req?.log.info('Received token with issuer:', claims.iss, 'but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.')
-          return undefined
-        }
-        const { payload } = await jwtVerify(token, verifyKey as any)
-        return await this.authFromPayload(payload)
-      } catch (e) {
-        req?.log.error(e)
-        return undefined
-      }
-    } else {
-      return undefined
-    }
+    if (!token) return undefined
+    return await Context.tokenCache.get(token, { req, ctx: this })
   }
 
   async authFromPayload (payload: JWTPayload) {
