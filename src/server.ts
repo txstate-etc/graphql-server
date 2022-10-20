@@ -7,7 +7,7 @@ import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, BuildSchemaOptions } from 'type-graphql'
 import { composeQueryDigest, QueryDigest } from './querydigest'
-import { Context, Type } from './context'
+import { Context, MockContext } from './context'
 import { ExecutionError, ParseError, AuthError } from './errors'
 import { buildFederationSchema } from './federation'
 import { NoIntrospection, shasum } from './util'
@@ -28,20 +28,20 @@ interface PlaygroundSettings {
   'schema.polling.interval'?: number
 }
 
-export interface GQLStartOpts <CustomContext extends Context = Context> extends BuildSchemaOptions {
+export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof Context> extends BuildSchemaOptions {
   port?: number
   gqlEndpoint?: string | string[]
   playgroundEndpoint?: string | false
   playgroundSettings?: PlaygroundSettings
   voyagerEndpoint?: string | false
-  customContext?: Type<CustomContext>
+  customContext?: CustomContext
   send401?: boolean
   federated?: boolean
   introspection?: boolean
   requireSignedQueries?: boolean
   signedQueriesWhitelist?: Set<string>
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined) => void | Promise<void>
-  send403?: (ctx: CustomContext) => boolean | Promise<boolean>
+  send403?: (ctx: InstanceType<CustomContext>) => boolean | Promise<boolean>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
@@ -78,6 +78,8 @@ export class GQLServer extends Server {
     options.introspection ??= true
     options.requireSignedQueries ??= false
     options.signedQueriesWhitelist ??= new Set<string>()
+
+    const ContextClass = options.customContext ?? Context
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
@@ -119,12 +121,12 @@ export class GQLServer extends Server {
       maxSize: 1024 * 1024 * 2,
       sizeCalculation: (entry: boolean, key: string) => key.length + 1
     })
-    Context.init()
+    ContextClass.init()
     if (options.requireSignedQueries) {
       QueryDigest.init()
     }
 
-    (Context as any).executeQuery = async (ctx: Context, query: string, variables?: any, operationName?: string) => {
+    (MockContext as any).executeQuery = async (ctx: MockContext, query: string, variables?: any, operationName?: string) => {
       const parsedQuery = await parsedQueryCache.get(query)
       if (parsedQuery instanceof ParseError) throw new Error(parsedQuery.toString())
       operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
@@ -133,7 +135,7 @@ export class GQLServer extends Server {
 
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
-        const ctx = new (options.customContext ?? Context)(req)
+        const ctx = new ContextClass(req)
         await ctx.waitForAuth()
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) {

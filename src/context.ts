@@ -12,14 +12,47 @@ export function cleanPem (secretOrPem: string | undefined) {
   return secretOrPem?.replace(/(-+BEGIN [\w\s]+ KEY-+)\s*(.*?)\s*(-+END [\w\s]+ KEY-+)/, '$1\n$2\n$3')
 }
 
-export class Context<AuthType = any> {
-  private authPromise: Promise<AuthType | undefined> | AuthType | undefined
+export class MockContext<AuthType = any> {
   public auth?: AuthType
   protected serviceInstances: Map<string, any>
-  public loaders: DataLoaderFactory<Context>
+  public loaders: DataLoaderFactory<this>
+  private static executeQuery: (ctx: MockContext, query: string, variables: any, operationName?: string) => Promise<any>
+
+  constructor (auth: any) {
+    this.loaders = new DataLoaderFactory(this)
+    this.serviceInstances = new Map()
+    this.auth = auth
+  }
+
+  async waitForAuth () {}
+
+  static init () {}
+
+  svc <T extends BaseService> (ServiceType: Type<T>) {
+    if (!this.serviceInstances.has(ServiceType.name)) this.serviceInstances.set(ServiceType.name, new ServiceType(this))
+    return this.serviceInstances.get(ServiceType.name) as T
+  }
+
+  private lasttime?: Date
+  timing (...messages: string[]) {
+    const now = new Date()
+    console.debug(now.getTime() - (this.lasttime ?? now).getTime(), ...messages)
+    this.lasttime = now
+  }
+
+  requireAuth () {
+    if (this.auth == null) throw new AuthError()
+  }
+
+  async query <T> (query: string, variables?: any): Promise<T> {
+    return await MockContext.executeQuery(this, query, variables) as T
+  }
+}
+
+export class Context<AuthType = any> extends MockContext<AuthType> {
+  private authPromise: Promise<AuthType | undefined> | AuthType | undefined
   protected static jwtVerifyKey: KeyObject | undefined
   protected static issuerKeys = new Map<string, JWTVerifyGetKey | KeyObject>()
-  private static executeQuery: (ctx: Context, query: string, variables: any, operationName?: string) => Promise<any>
 
   protected static tokenCache = new Cache(async (token: string, { req, ctx }: { req?: FastifyRequest, ctx: Context }) => {
     const logger = req?.log ?? console
@@ -41,9 +74,12 @@ export class Context<AuthType = any> {
   }, { freshseconds: 10 })
 
   constructor (req?: FastifyRequest) {
-    this.loaders = new DataLoaderFactory(this)
-    this.serviceInstances = new Map()
+    super(undefined)
     this.authPromise = this.authFromReq(req)
+  }
+
+  async waitForAuth () {
+    this.auth = await this.authPromise
   }
 
   static init () {
@@ -84,29 +120,5 @@ export class Context<AuthType = any> {
 
   async authFromPayload (payload: JWTPayload) {
     return payload as unknown as AuthType
-  }
-
-  async waitForAuth () {
-    this.auth = await this.authPromise
-  }
-
-  svc <T extends BaseService> (ServiceType: Type<T>) {
-    if (!this.serviceInstances.has(ServiceType.name)) this.serviceInstances.set(ServiceType.name, new ServiceType(this))
-    return this.serviceInstances.get(ServiceType.name) as T
-  }
-
-  private lasttime?: Date
-  timing (...messages: string[]) {
-    const now = new Date()
-    console.debug(now.getTime() - (this.lasttime ?? now).getTime(), ...messages)
-    this.lasttime = now
-  }
-
-  requireAuth () {
-    if (this.auth == null) throw new AuthError()
-  }
-
-  async query <T> (query: string, variables?: any): Promise<T> {
-    return await Context.executeQuery(this, query, variables)
   }
 }
