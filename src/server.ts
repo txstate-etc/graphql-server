@@ -50,7 +50,7 @@ export const gqlDevLogger = {
   ...devLogger,
   info: (msg: any) => {
     if (msg.res) {
-      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.extraLogInfo.query?.replace(/[\s]+/g, ' ') ?? `${msg.res.statusCode} ${msg.res.request.method} ${msg.res.request.url}`}`)
+      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.extraLogInfo?.query?.replace(/[\s]+/g, ' ') ?? `${msg.res.statusCode} ${msg.res.request.method} ${msg.res.request.url}`}`)
     } else if (!msg.req) {
       console.info(msg)
     }
