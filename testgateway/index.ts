@@ -5,7 +5,7 @@ import { sleep } from 'txstate-utils'
 const server = new Server()
 
 async function main () {
-  await sleep(500)
+  await sleep(2000)
   await server.app.register(mercurius, {
     graphiql: true,
     gateway: {

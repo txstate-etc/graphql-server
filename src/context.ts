@@ -14,7 +14,7 @@ export function cleanPem (secretOrPem: string | undefined) {
 
 export class MockContext<AuthType = any> {
   public auth?: AuthType
-  protected serviceInstances: Map<string, any>
+  protected serviceInstances: Map<any, any>
   public loaders: DataLoaderFactory<this>
   private static executeQuery: (ctx: MockContext, query: string, variables: any, operationName?: string) => Promise<any>
 
@@ -29,8 +29,8 @@ export class MockContext<AuthType = any> {
   static init () {}
 
   svc <T extends BaseService> (ServiceType: Type<T>) {
-    if (!this.serviceInstances.has(ServiceType.name)) this.serviceInstances.set(ServiceType.name, new ServiceType(this))
-    return this.serviceInstances.get(ServiceType.name) as T
+    if (!this.serviceInstances.has(ServiceType)) this.serviceInstances.set(ServiceType, new ServiceType(this))
+    return this.serviceInstances.get(ServiceType) as T
   }
 
   private lasttime?: Date

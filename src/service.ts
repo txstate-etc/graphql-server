@@ -1,4 +1,4 @@
-import { filterAsync } from 'txstate-utils'
+import { filterAsync, isNotNull } from 'txstate-utils'
 import { Context, Type } from './context'
 
 export abstract class BaseService<AuthType = any> {
@@ -35,7 +35,7 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
   async removeUnauthorized (objects: ObjType[] | ObjType | undefined) {
     if (objects == null) return undefined
     if (Array.isArray(objects)) {
-      const visible = await filterAsync(objects, async obj => (obj ? await this.mayView(obj) : false))
+      const visible = await filterAsync(objects.filter(isNotNull), async obj => await this.mayView(obj))
       return await Promise.all(visible.map(async obj => await this.removeProperties(obj))) as RedactedType[] | ObjType[]
     }
     if (await this.mayView(objects)) return await this.removeProperties(objects)
