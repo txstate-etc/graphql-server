@@ -1,7 +1,7 @@
 import { AuthorizedService } from '../../src'
-import { Meeting, MeetingFilter } from './meeting.model'
+import { type Meeting, type MeetingFilter } from './meeting.model'
 import { getMeetings, inMeeting } from './meeting.database'
-import { Person, PersonFilter } from '../person/person.model'
+import { type Person, type PersonFilter } from '../person/person.model'
 
 export class MeetingService extends AuthorizedService {
   async find (filter?: MeetingFilter) {

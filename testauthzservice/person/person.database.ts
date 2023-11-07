@@ -1,5 +1,5 @@
 import { isNotNull } from 'txstate-utils'
-import { Person, PersonFilter } from './person.model'
+import { type Person, type PersonFilter } from './person.model'
 
 export const personDb = new Map<number, Person>()
 personDb.set(1, {

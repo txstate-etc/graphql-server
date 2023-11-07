@@ -1,5 +1,5 @@
 import { isNotNull } from 'txstate-utils'
-import { Library, LibraryFilter } from './library.model'
+import { type Library, type LibraryFilter } from './library.model'
 
 const libraryDb = new Map<number, Library>()
 

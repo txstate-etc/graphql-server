@@ -1,5 +1,5 @@
 import { filterAsync, isNotNull } from 'txstate-utils'
-import { Context, Type } from './context'
+import { type Context, type Type } from './context'
 
 export abstract class BaseService<AuthType = any> {
   constructor (protected ctx: Context<AuthType>) {}
@@ -17,11 +17,11 @@ export abstract class BaseService<AuthType = any> {
   }
 
   timing (...messages: string[]) {
-    return this.ctx.timing(...messages)
+    this.ctx.timing(...messages)
   }
 
   requireAuth () {
-    return this.ctx.requireAuth()
+    this.ctx.requireAuth()
   }
 }
 

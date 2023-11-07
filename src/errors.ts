@@ -1,5 +1,5 @@
 import { HttpError } from 'fastify-txstate'
-import { GraphQLError } from 'graphql'
+import { type GraphQLError } from 'graphql'
 import { get, isNotNull } from 'txstate-utils'
 import { Field, ObjectType, registerEnumType } from 'type-graphql'
 

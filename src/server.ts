@@ -1,11 +1,11 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
-import Server, { devLogger, FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
+import { type FastifyRequest, type FastifyReply } from 'fastify'
+import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, GraphQLError, lexicographicSortSchema, OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
-import LRU from 'lru-cache'
+import { execute, type GraphQLError, lexicographicSortSchema, type OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
+import { LRUCache } from 'lru-cache'
 import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
-import { buildSchema, BuildSchemaOptions } from 'type-graphql'
+import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
 import { composeQueryDigest, QueryDigest } from './querydigest'
 import { Context, MockContext } from './context'
 import { ExecutionError, ParseError, AuthError } from './errors'
@@ -22,7 +22,7 @@ interface PlaygroundSettings {
   'editor.fontSize'?: number
   'editor.fontFamily'?: string
   'request.credentials'?: string
-  'request.globalHeaders'?: { [key: string]: string }
+  'request.globalHeaders'?: Record<string, string>
   'schema.polling.enable'?: boolean
   'schema.polling.endpointFilter'?: string
   'schema.polling.interval'?: number
@@ -113,11 +113,11 @@ export class GQLServer extends Server {
       freshseconds: 3600,
       staleseconds: 7200
     })
-    const persistedQueryCache = new LRU<string, string>({
+    const persistedQueryCache = new LRUCache<string, string>({
       maxSize: 1024 * 1024,
       sizeCalculation: (entry: string, key: string) => entry.length + key.length
     })
-    const persistedVerifiedQueryDigestCache = new LRU<string, boolean>({
+    const persistedVerifiedQueryDigestCache = new LRUCache<string, boolean>({
       maxSize: 1024 * 1024 * 2,
       sizeCalculation: (entry: boolean, key: string) => key.length + 1
     })
@@ -186,7 +186,7 @@ export class GQLServer extends Server {
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => res.log.error(e))
+          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => { res.log.error(e) })
         }
         return ret
       } catch (e: any) {
@@ -201,6 +201,6 @@ export class GQLServer extends Server {
     for (const path of options.gqlEndpoint) {
       this.app.post(path, handlePost)
     }
-    return await super.start(options.port)
+    await super.start(options.port)
   }
 }

@@ -1,7 +1,7 @@
 import { AuthorizedService } from '../../src'
-import { Person, PersonFilter } from './person.model'
+import { type Person, type PersonFilter } from './person.model'
 import { getPeople } from './person.database'
-import { Meeting } from '../meeting/meeting.model'
+import { type Meeting } from '../meeting/meeting.model'
 import { hostForPerson, shareMeeting } from '../meeting/meeting.database'
 
 export class PersonService extends AuthorizedService {

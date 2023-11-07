@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
+import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import { expect } from 'chai'
 import { sleep } from 'txstate-utils'
 import { SignJWT } from 'jose'

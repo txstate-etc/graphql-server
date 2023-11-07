@@ -1,10 +1,10 @@
-import { createPublicKey, createSecretKey, KeyObject } from 'crypto'
+import { createPublicKey, createSecretKey, type KeyObject } from 'crypto'
 import { DataLoaderFactory } from 'dataloader-factory'
-import { FastifyRequest } from 'fastify'
-import { createRemoteJWKSet, decodeJwt, JWTPayload, jwtVerify, JWTVerifyGetKey } from 'jose'
+import { type FastifyRequest } from 'fastify'
+import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import { Cache, omit, toArray } from 'txstate-utils'
 import { AuthError } from './errors'
-import { BaseService } from './service'
+import { type BaseService } from './service'
 
 export type Type<T> = new (...args: any[]) => T
 

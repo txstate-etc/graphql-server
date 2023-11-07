@@ -1,7 +1,7 @@
-import { FastifyRequest } from 'fastify'
-import { jwtVerify, KeyLike } from 'jose'
+import { type FastifyRequest } from 'fastify'
+import { jwtVerify, type KeyLike } from 'jose'
 import { createHmac, createPublicKey } from 'crypto'
-import { GQLRequest } from './server'
+import { type GQLRequest } from './server'
 
 // https://nodejs.org/api/crypto.html#crypto
 export function composeQueryDigest (clientId: string, query: string): string {

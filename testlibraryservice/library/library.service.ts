@@ -1,7 +1,7 @@
 import { BaseService } from '../../src'
-import { LibraryFilter } from './library.model'
+import { type LibraryFilter } from './library.model'
 import { getLibraries } from './library.database'
-import { Book } from '../book/book.model'
+import { type Book } from '../book/book.model'
 
 export class LibraryService extends BaseService {
   async find (filter?: LibraryFilter) {

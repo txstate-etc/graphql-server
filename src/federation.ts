@@ -14,11 +14,11 @@ import {
   isTypeDefinitionNode,
   isTypeExtensionNode,
   isObjectType,
-  TypeDefinitionNode,
-  TypeExtensionNode,
-  NameNode,
-  DirectiveDefinitionNode,
-  GraphQLResolveInfo,
+  type TypeDefinitionNode,
+  type TypeExtensionNode,
+  type NameNode,
+  type DirectiveDefinitionNode,
+  type GraphQLResolveInfo,
   UniqueDirectivesPerLocationRule
 } from 'graphql'
 import { specifiedSDLRules } from 'graphql/validation/specifiedRules'
@@ -264,7 +264,7 @@ export function buildFederationSchema (schema: GraphQLSchema) {
   })
 }
 
-const resolveMap: Record<string, Function> = {}
+const resolveMap: Record<string, (...args: any[]) => any> = {}
 export function ResolveReference (typename: string): MethodDecorator {
   return (prototype, key) => {
     if (typeof key === 'symbol') return
