@@ -1,1 +1,1 @@
-docker compose up --build --remove-orphans --abort-on-container-exit #--attach test
+docker compose up --build --remove-orphans --abort-on-container-exit --attach test

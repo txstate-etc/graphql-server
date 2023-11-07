@@ -9,6 +9,7 @@ export const GQLServer = pkg.GQLServer
 export const MutationMessage = pkg.MutationMessage
 export const MutationMessageType = pkg.MutationMessageType
 export const ResolveReference = pkg.ResolveReference
+export const TxStateUAuthContext = pkg.TxStateUAuthContext
 export const UnimplementedError = pkg.UnimplementedError
 export const ValidatedResponse = pkg.ValidatedResponse
 export const gqlDevLogger = pkg.gqlDevLogger
