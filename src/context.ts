@@ -2,7 +2,7 @@ import { createPublicKey, createSecretKey, KeyObject } from 'crypto'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { FastifyRequest } from 'fastify'
 import { createRemoteJWKSet, decodeJwt, JWTPayload, jwtVerify, JWTVerifyGetKey } from 'jose'
-import { Cache, toArray } from 'txstate-utils'
+import { Cache, omit, toArray } from 'txstate-utils'
 import { AuthError } from './errors'
 import { BaseService } from './service'
 
@@ -53,17 +53,19 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
   private authPromise: Promise<AuthType | undefined> | AuthType | undefined
   protected static jwtVerifyKey: KeyObject | undefined
   protected static issuerKeys = new Map<string, JWTVerifyGetKey | KeyObject>()
+  protected static issuerConfig = new Map<string, any>()
 
   protected static tokenCache = new Cache(async (token: string, { req, ctx }: { req?: FastifyRequest, ctx: Context }) => {
     const logger = req?.log ?? console
-    let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
+    let verifyKey: KeyObject | JWTVerifyGetKey | undefined = this.jwtVerifyKey
     try {
       const claims = decodeJwt(token)
-      if (claims.iss && Context.issuerKeys.has(claims.iss)) verifyKey = Context.issuerKeys.get(claims.iss)
+      if (claims.iss && this.issuerKeys.has(claims.iss)) verifyKey = this.issuerKeys.get(claims.iss)
       if (!verifyKey) {
         logger.info('Received token with issuer:', claims.iss, 'but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.')
         return undefined
       }
+      await this.validateToken?.(token, this.issuerConfig.get(claims.iss!), claims)
       const { payload } = await jwtVerify(token, verifyKey as any)
       return await ctx.authFromPayload(payload)
     } catch (e: any) {
@@ -100,12 +102,33 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
     if (process.env.JWT_TRUSTED_ISSUERS) {
       const issuers = toArray(JSON.parse(process.env.JWT_TRUSTED_ISSUERS))
       for (const issuer of issuers) {
-        if (issuer.url) Context.issuerKeys.set(issuer.iss, createRemoteJWKSet(new URL(issuer.url)))
-        else if (issuer.publicKey) Context.issuerKeys.set(issuer.iss, createPublicKey(issuer.publicKey))
-        else if (issuer.secret) Context.issuerKeys.set(issuer.iss, createSecretKey(Buffer.from(issuer.secret, 'ascii')))
+        this.issuerConfig.set(issuer.iss, this.processIssuerConfig?.(omit(issuer, 'publicKey', 'secret')))
+        if (issuer.url) this.issuerKeys.set(issuer.iss, createRemoteJWKSet(new URL(issuer.url)))
+        else if (issuer.publicKey) this.issuerKeys.set(issuer.iss, createPublicKey(issuer.publicKey))
+        else if (issuer.secret) this.issuerKeys.set(issuer.iss, createSecretKey(Buffer.from(issuer.secret, 'ascii')))
       }
     }
   }
+
+  /**
+   * If implemented, this method will be called on startup, once per configured issuer. It receives
+   * the issuer configuration from the JWT_TRUSTED_ISSUERS environment variable and allows you to manipulate
+   * the configuration before storing it.
+   *
+   * Once stored, whatever you create may be used in your custom validateToken method. For example,
+   * you might want to create an in-memory URL object with an issuer's URL so that it can be manipulated
+   * easily to send validation checks to the issuer.
+   */
+  static processIssuerConfig: undefined | ((config: any) => any)
+
+  /**
+   * If implemented, this method is called after a token's signature is checked and passes. You would
+   * typically implement this method to check whether the user has manually signed out, or the token has
+   * been otherwise deauthorized before its expiration date.
+   *
+   * If the token is not valid, this method should throw an error with an appropriate message.
+   */
+  static validateToken: undefined | ((token: string, issuerConfig: any, claims: JWTPayload) => void | Promise<void>)
 
   tokenFromReq (req?: FastifyRequest) {
     const m = req?.headers.authorization?.match(/^bearer (.*)$/i)
@@ -115,10 +138,30 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
   async authFromReq (req?: FastifyRequest): Promise<AuthType | undefined> {
     const token = this.tokenFromReq(req)
     if (!token) return undefined
-    return await Context.tokenCache.get(token, { req, ctx: this })
+    return await (this.constructor as typeof Context).tokenCache.get(token, { req, ctx: this })
   }
 
   async authFromPayload (payload: JWTPayload) {
     return payload as unknown as AuthType
+  }
+}
+
+export class TxStateUAuthContext extends Context {
+  static processIssuerConfig (config: any) {
+    if (config.iss === 'unified-auth') {
+      config.validateUrl = new URL(config.url)
+      config.validateUrl.pathname = '/validateToken'
+    }
+    return config
+  }
+
+  static async validateToken (token: string, issuerConfig: any, claims: any) {
+    if (claims.iss === 'unified-auth') {
+      const validateUrl = new URL(issuerConfig.validateUrl)
+      validateUrl.searchParams.set('unifiedJwt', token)
+      const resp = await fetch(validateUrl)
+      const validate = await resp.json() as { valid: boolean, reason?: string }
+      if (!validate.valid) throw new Error(validate.reason ?? 'Your session has been ended on another device or in another browser tab/window. It\'s also possible your NetID is no longer active.')
+    }
   }
 }
