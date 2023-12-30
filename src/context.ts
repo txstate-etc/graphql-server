@@ -57,12 +57,12 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
 
   protected static tokenCache = new Cache(async (token: string, { req, ctx }: { req?: FastifyRequest, ctx: Context }) => {
     const logger = req?.log ?? console
-    let verifyKey: KeyObject | JWTVerifyGetKey | undefined = this.jwtVerifyKey
+    let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
     try {
       const claims = decodeJwt(token)
       if (claims.iss && this.issuerKeys.has(claims.iss)) verifyKey = this.issuerKeys.get(claims.iss)
       if (!verifyKey) {
-        logger.info('Received token with issuer:', claims.iss, 'but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.')
+        logger.info(`Received token with issuer: ${claims.iss} but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.`)
         return undefined
       }
       await this.validateToken?.(token, this.issuerConfig.get(claims.iss!), claims)
@@ -87,15 +87,15 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
   static init () {
     let secret = cleanPem(process.env.JWT_SECRET_VERIFY)
     if (secret != null) {
-      this.jwtVerifyKey = createPublicKey(secret)
+      Context.jwtVerifyKey = createPublicKey(secret)
     } else {
       secret = cleanPem(process.env.JWT_SECRET)
       if (secret != null) {
         try {
-          this.jwtVerifyKey = createPublicKey(secret)
+          Context.jwtVerifyKey = createPublicKey(secret)
         } catch (e: any) {
           console.info('JWT_SECRET was not a private key, treating it as symmetric.')
-          this.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
+          Context.jwtVerifyKey = createSecretKey(Buffer.from(secret, 'ascii'))
         }
       }
     }
