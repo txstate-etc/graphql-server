@@ -2,6 +2,7 @@ import pkg from '../dist/index.js'
 
 export const AuthError = pkg.AuthError
 export const AuthorizedService = pkg.AuthorizedService
+export const AuthorizedServiceSync = pkg.AuthorizedServiceSync
 export const BaseService = pkg.BaseService
 export const MockContext = pkg.MockContext
 export const Context = pkg.Context
