@@ -56,16 +56,21 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
   protected static issuerConfig = new Map<string, any>()
 
   protected static tokenCache = new Cache(async (token: string, { req, ctx }: { req?: FastifyRequest, ctx: Context }) => {
+    // `this` is always the Context class, even if we are making instances of a subclass of Context
+    // we need to get the instance's constructor instead in case it has overridden one of our
+    // static methods/variables
+    const ctxStatic = ctx.constructor as typeof Context
+
     const logger = req?.log ?? console
     let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
     try {
       const claims = decodeJwt(token)
-      if (claims.iss && this.issuerKeys.has(claims.iss)) verifyKey = this.issuerKeys.get(claims.iss)
+      if (claims.iss && ctxStatic.issuerKeys.has(claims.iss)) verifyKey = ctxStatic.issuerKeys.get(claims.iss)
       if (!verifyKey) {
         logger.info(`Received token with issuer: ${claims.iss} but JWT secret could not be found. The server may be misconfigured or the user may have presented a JWT from an untrusted issuer.`)
         return undefined
       }
-      await this.validateToken?.(token, this.issuerConfig.get(claims.iss!), claims)
+      await ctxStatic.validateToken?.(token, ctxStatic.issuerConfig.get(claims.iss!), claims)
       const { payload } = await jwtVerify(token, verifyKey as any)
       return await ctx.authFromPayload(payload)
     } catch (e: any) {
