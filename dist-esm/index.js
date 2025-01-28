@@ -14,3 +14,4 @@ export const TxStateUAuthContext = pkg.TxStateUAuthContext
 export const UnimplementedError = pkg.UnimplementedError
 export const ValidatedResponse = pkg.ValidatedResponse
 export const gqlDevLogger = pkg.gqlDevLogger
+export const UploadInfo = pkg.UploadInfo

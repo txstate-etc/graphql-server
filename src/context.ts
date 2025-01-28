@@ -1,4 +1,6 @@
-import { createPublicKey, createSecretKey, type KeyObject } from 'crypto'
+import { createPublicKey, createSecretKey, type KeyObject } from 'node:crypto'
+import type { Readable } from 'node:stream'
+import type { Multipart } from '@fastify/multipart'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { type FastifyRequest } from 'fastify'
 import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify, type JWTVerifyGetKey } from 'jose'
@@ -17,6 +19,7 @@ export class MockContext<AuthType = any> {
   protected serviceInstances: Map<any, any>
   public loaders: DataLoaderFactory<this>
   private static executeQuery: (ctx: MockContext, query: string, variables: any, operationName?: string) => Promise<any>
+  protected parts: AsyncIterableIterator<Multipart> | undefined
 
   constructor (auth: any) {
     this.loaders = new DataLoaderFactory(this)
@@ -46,6 +49,21 @@ export class MockContext<AuthType = any> {
 
   async query <T> (query: string, variables?: any): Promise<T> {
     return await MockContext.executeQuery(this, query, variables) as T
+  }
+
+  setParts (parts: AsyncIterableIterator<Multipart> | undefined) {
+    this.parts = parts
+  }
+
+  async * files (): AsyncIterableIterator<{ multipartIndex: number, name: string, mime: string, stream: Readable }> {
+    if (!this.parts) return
+    let idx = 0
+    for await (const p of this.parts) {
+      if (p.type === 'file') {
+        yield { multipartIndex: idx, name: p.filename, mime: p.mimetype, stream: p.file }
+        idx++
+      }
+    }
   }
 }
 

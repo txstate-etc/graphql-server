@@ -1,5 +1,5 @@
-import { Arg, Ctx, FieldResolver, Query, Resolver, Root } from 'type-graphql'
-import { AuthError, Context, ResolveReference } from '../../src'
+import { Arg, Ctx, FieldResolver, Int, Mutation, Query, Resolver, Root } from 'type-graphql'
+import { AuthError, Context, ResolveReference, UploadInfo } from '../../src'
 import { Author, AuthorFilter } from '../author/author.model'
 import { AuthorService } from '../author/author.service'
 import { Book, BookFilter } from './book.model'
@@ -25,5 +25,16 @@ export class BookResolver {
   @FieldResolver(returns => Boolean)
   async authTest () {
     throw new AuthError()
+  }
+
+  @Mutation(returns => [Int])
+  async uploadBookData (@Ctx() ctx: Context, @Arg('file', type => UploadInfo) file: UploadInfo) {
+    const sizes: number[] = []
+    for await (const f of ctx.files()) {
+      let size = 0
+      for await (const chunk of f.stream) size += chunk.length
+      sizes.push(size)
+    }
+    return sizes
   }
 }

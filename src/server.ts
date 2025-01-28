@@ -1,9 +1,10 @@
+import path from 'node:path'
+import multipartPlugin from '@fastify/multipart'
 import { type FastifyRequest, type FastifyReply } from 'fastify'
 import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
 import { execute, type GraphQLError, lexicographicSortSchema, type OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
-import path from 'path'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
 import { composeQueryDigest, QueryDigest } from './querydigest'
@@ -133,6 +134,12 @@ export class GQLServer extends Server {
       return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
     }
 
+    await this.app.register(multipartPlugin, {
+      limits: {
+        fileSize: process.env.MAX_UPLOAD_SIZE ? Number(process.env.MAX_UPLOAD_SIZE) : 10 * 1024 * 1024
+      }
+    })
+
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new ContextClass(req)
@@ -144,7 +151,19 @@ export class GQLServer extends Server {
         if (options.send403 && await options.send403(ctx)) {
           throw new HttpError(403, 'Not authorized to use this service.')
         }
-        let query: string | undefined = req.body.query
+
+        let body: GQLRequest['Body']
+        if (req.isMultipart()) {
+          const parts = req.parts()
+          const { value, done } = await parts.next()
+          const json = value.value
+          body = JSON.parse(json)
+          if (!done) ctx.setParts(parts)
+        } else {
+          body = req.body
+        }
+
+        let query: string | undefined = body.query
         if (options.requireSignedQueries) {
           if (ctx.auth?.client_id == null) {
             throw new HttpError(401, 'request requires authentication with client service')
@@ -159,7 +178,7 @@ export class GQLServer extends Server {
             }
           }
         }
-        const hash = req.body.extensions?.persistedQuery?.sha256Hash
+        const hash = body.extensions?.persistedQuery?.sha256Hash
         if (hash) {
           if (query) {
             if (hash !== shasum(query)) throw new HttpError(401, 'provided sha does not match query')
@@ -176,17 +195,17 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        const operationName: string | undefined = req.body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
+        const operationName: string | undefined = body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
         req.log.info({ operationName, query, auth: ctx.auth }, 'finished parsing query')
         const start = new Date()
-        const ret = await execute(schema, parsedQuery, {}, ctx, req.body.variables, operationName)
+        const ret = await execute(schema, parsedQuery, {}, ctx, body.variables, operationName)
         if (ret?.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, req.body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => { res.log.error(e) })
+          options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => { res.log.error(e) })
         }
         return ret
       } catch (e: any) {
