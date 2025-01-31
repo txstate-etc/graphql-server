@@ -1,5 +1,4 @@
 import path from 'node:path'
-import multipartPlugin from '@fastify/multipart'
 import { type FastifyRequest, type FastifyReply } from 'fastify'
 import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
@@ -134,12 +133,6 @@ export class GQLServer extends Server {
       return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
     }
 
-    await this.app.register(multipartPlugin, {
-      limits: {
-        fileSize: process.env.MAX_UPLOAD_SIZE ? Number(process.env.MAX_UPLOAD_SIZE) : 10 * 1024 * 1024
-      }
-    })
-
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new ContextClass(req)
@@ -153,7 +146,7 @@ export class GQLServer extends Server {
         }
 
         let body: GQLRequest['Body']
-        if (req.isMultipart()) {
+        if (req.isMultipart?.()) {
           const parts = req.parts()
           const { value, done } = await parts.next()
           const json = value.value
