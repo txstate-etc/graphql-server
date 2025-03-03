@@ -1,12 +1,12 @@
 import { createPublicKey, createSecretKey, type KeyObject } from 'node:crypto'
-import type { Readable } from 'node:stream'
 import type { Multipart } from '@fastify/multipart'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { type FastifyRequest } from 'fastify'
 import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import { Cache, omit, toArray } from 'txstate-utils'
 import { AuthError } from './errors'
-import { type BaseService } from './service'
+import type { BaseService } from './service'
+import type { UploadFiles } from './models'
 
 export type Type<T> = new (...args: any[]) => T
 
@@ -55,7 +55,7 @@ export class MockContext<AuthType = any> {
     this.parts = parts
   }
 
-  async * files (): AsyncIterableIterator<{ multipartIndex: number, name: string, mime: string, stream: Readable }> {
+  async * files (): UploadFiles {
     if (!this.parts) return
     let idx = 0
     for await (const p of this.parts) {

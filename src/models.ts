@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream'
 import { Field, InputType } from 'type-graphql'
 
 @InputType()
@@ -17,3 +18,10 @@ export class UploadInfo {
   @Field()
   size!: number
 }
+
+export type UploadFiles = AsyncIterableIterator<{
+  multipartIndex: number
+  name: string
+  mime: string
+  stream: Readable
+}>
