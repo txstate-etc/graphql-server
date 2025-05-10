@@ -1,6 +1,6 @@
 {
   "name": "@txstate-mws/graphql-server",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "A simple graphql server designed to work with typegraphql.",
   "exports": {
     "types": "./dist-esm/index.d.ts",
@@ -10,7 +10,7 @@
   "types": "./dist-esm/index.d.ts",
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "rm -rf dist && tsc && cp src/*.html ./dist/ && mv dist/*.d.ts dist-esm/",
+    "build": "rm -rf dist && tsc && cp src/*.html ./dist/ && cp src/playground.js ./dist/ && mv dist/*.d.ts dist-esm/",
     "mocha": "TS_NODE_PROJECT=test/tsconfig.json mocha -r ts-node/register test/**/*.ts --exit",
     "test": "./test.sh",
     "start": "ts-node testservice/index.ts"
