@@ -2,7 +2,7 @@ import path from 'node:path'
 import { type FastifyRequest, type FastifyReply } from 'fastify'
 import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, type GraphQLError, lexicographicSortSchema, type OperationDefinitionNode, parse, specifiedRules, validate } from 'graphql'
+import { execute, type GraphQLError, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
@@ -85,7 +85,15 @@ export class GQLServer extends Server {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
         res = res.type('text/html')
         const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
-        return pg.replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0]).replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
+        return pg
+          .replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0])
+          .replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
+          .replace(/API_PREFIX/, process.env.API_PREFIX ?? '')
+      })
+      this.app.get('/playground.js', async (req, res) => {
+        res = res.type('text/javascript')
+        const pg = (await readFile(path.join(__dirname, 'playground.js'))).toString('utf-8')
+        return pg
       })
     }
     if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
@@ -129,7 +137,7 @@ export class GQLServer extends Server {
     (MockContext as any).executeQuery = async (ctx: MockContext, query: string, variables?: any, operationName?: string) => {
       const parsedQuery = await parsedQueryCache.get(query)
       if (parsedQuery instanceof ParseError) throw new Error(parsedQuery.toString())
-      operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
+      operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
       return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
     }
 
@@ -188,7 +196,7 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        const operationName: string | undefined = body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition') as OperationDefinitionNode)?.name?.value
+        const operationName: string | undefined = body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
         req.log.info({ operationName, query, auth: ctx.auth }, 'finished parsing query')
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, ctx, body.variables, operationName)
