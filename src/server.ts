@@ -28,7 +28,7 @@ interface PlaygroundSettings {
   'schema.polling.interval'?: number
 }
 
-export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof MockContext> extends BuildSchemaOptions {
+export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof Context> extends BuildSchemaOptions {
   port?: number
   gqlEndpoint?: string | string[]
   playgroundEndpoint?: string | false

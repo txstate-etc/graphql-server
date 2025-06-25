@@ -190,8 +190,9 @@ export class TxStateUAuthContext extends Context {
   }
 }
 
-export class FastifyTxStateContext extends MockContext<FastifyTxStateAuthInfo> {
-  constructor (req: FastifyRequest) {
-    super(req.auth)
+export class FastifyTxStateContext extends Context<FastifyTxStateAuthInfo> {
+  init () {}
+  async authFromReq (req?: FastifyRequest): Promise<FastifyTxStateAuthInfo | undefined> {
+    return req?.auth
   }
 }
