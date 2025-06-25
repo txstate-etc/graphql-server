@@ -2,6 +2,7 @@ import { createPublicKey, createSecretKey, type KeyObject } from 'node:crypto'
 import type { Multipart } from '@fastify/multipart'
 import { DataLoaderFactory } from 'dataloader-factory'
 import { type FastifyRequest } from 'fastify'
+import type { FastifyTxStateAuthInfo } from 'fastify-txstate'
 import { createRemoteJWKSet, decodeJwt, type JWTPayload, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import { Cache, omit, toArray } from 'txstate-utils'
 import { AuthError } from './errors'
@@ -186,5 +187,11 @@ export class TxStateUAuthContext extends Context {
       const validate = await resp.json() as { valid: boolean, reason?: string }
       if (!validate.valid) throw new Error(validate.reason ?? 'Your session has been ended on another device or in another browser tab/window. It\'s also possible your NetID is no longer active.')
     }
+  }
+}
+
+export class FastifyTxStateContext extends MockContext<FastifyTxStateAuthInfo> {
+  constructor (req: FastifyRequest) {
+    super(req.auth)
   }
 }

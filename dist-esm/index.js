@@ -6,6 +6,7 @@ export const AuthorizedServiceSync = pkg.AuthorizedServiceSync
 export const BaseService = pkg.BaseService
 export const MockContext = pkg.MockContext
 export const Context = pkg.Context
+export const FastifyTxStateContext = pkg.FastifyTxStateContext
 export const GQLServer = pkg.GQLServer
 export const MutationMessage = pkg.MutationMessage
 export const MutationMessageType = pkg.MutationMessageType
