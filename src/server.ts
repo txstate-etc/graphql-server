@@ -40,7 +40,7 @@ export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof
   introspection?: boolean
   requireSignedQueries?: boolean
   signedQueriesWhitelist?: Set<string>
-  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined) => void | Promise<void>
+  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: InstanceType<CustomContext>) => void | Promise<void>
   send403?: (ctx: InstanceType<CustomContext>) => boolean | Promise<boolean>
 }
 
@@ -206,7 +206,7 @@ export class GQLServer extends Server {
         }
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[])?.catch(e => { res.log.error(e) })
+          options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)?.catch(e => { res.log.error(e) })
         }
         return ret
       } catch (e: any) {

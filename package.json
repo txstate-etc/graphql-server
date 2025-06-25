@@ -1,6 +1,6 @@
 {
   "name": "@txstate-mws/graphql-server",
-  "version": "2.3.6",
+  "version": "2.3.7",
   "description": "A simple graphql server designed to work with typegraphql.",
   "exports": {
     "types": "./dist-esm/index.d.ts",
