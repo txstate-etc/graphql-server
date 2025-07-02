@@ -44,6 +44,8 @@ export class MockContext<AuthType = any> {
     this.lasttime = now
   }
 
+  authForLog (): Partial<AuthType> | undefined { return this.auth }
+
   requireAuth () {
     if (this.auth == null) throw new AuthError()
   }
@@ -194,5 +196,9 @@ export class FastifyTxStateContext extends Context<FastifyTxStateAuthInfo> {
   init () {}
   async authFromReq (req?: FastifyRequest): Promise<FastifyTxStateAuthInfo | undefined> {
     return req?.auth
+  }
+
+  authForLog () {
+    return this.auth ? omit(this.auth, 'token', 'issuerConfig') : undefined
   }
 }

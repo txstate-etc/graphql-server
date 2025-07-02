@@ -2,6 +2,7 @@ services:
   test:
     build:
       context: .
+    attach: true
     environment:
       # JWT keys are for testing only and not to be used for applications
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
@@ -46,12 +47,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.bookservice
+    attach: false
     environment:
       NODE_ENV: development
   basicbookservice:
     build:
       context: .
       dockerfile: Dockerfile.bookservice
+    attach: false
     environment:
       NODE_ENV: development
       # JWT keys are for testing only and not to be used for applications
@@ -62,6 +65,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.digestbookservice
+    attach: false
     environment:
       NODE_ENV: development
       WITHOUT_FEDERATION: 'true'
@@ -82,6 +86,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.authzservice
+    attach: false
     environment:
       NODE_ENV: development
       WITHOUT_FEDERATION: 'true'
@@ -91,6 +96,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.apollo
+    attach: false
     restart: on-failure:5
     depends_on:
       - bookservice
@@ -99,5 +105,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.libraryservice
+    attach: false
     environment:
       NODE_ENV: development

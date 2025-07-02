@@ -197,7 +197,7 @@ export class GQLServer extends Server {
           return { errors: parsedQuery.errors }
         }
         const operationName: string | undefined = body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
-        req.log.info({ operationName, query, auth: ctx.auth }, 'finished parsing query')
+        req.log.info({ operationName, query, auth: ctx.authForLog() }, 'finished parsing query')
         const start = new Date()
         const ret = await execute(schema, parsedQuery, {}, ctx, body.variables, operationName)
         if (ret?.errors?.length) {

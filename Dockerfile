@@ -6,5 +6,4 @@ RUN npm install
 
 COPY test test
 
-ENTRYPOINT [ "npm" ]
-CMD [ "run", "mocha" ]
+CMD [ "npm", "run", "mocha" ]
