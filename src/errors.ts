@@ -56,14 +56,26 @@ export class ValidatedResponse {
   messages: MutationMessage[]
 
   constructor (config?: ValidatedResponseArgs) {
-    this.success = !!config?.success
     this.messages = config?.messages ?? []
+    this.success = config?.success ?? !this.hasErrors()
   }
 
-  // push message onto messages array and mark not a success if it's fatal
-  addMessage (message: string, arg?: string, type?: MutationMessageType) {
-    this.messages.push(new MutationMessage(message, arg, type))
-    if (!type || type === MutationMessageType.error) this.success = false
+  /**
+   * push message onto messages array and mark not a success if it's fatal
+   * @deprecated Use add instead
+   */
+  addMessage (message: MutationMessage): void
+  addMessage (message: string, arg?: string, type?: MutationMessageType): void
+  addMessage (messageOrMutationMessage: string | MutationMessage, arg?: string, type?: MutationMessageType): void {
+    if (typeof messageOrMutationMessage === 'string') {
+      this.messages.push(new MutationMessage(messageOrMutationMessage, arg, type))
+    } else {
+      this.messages.push(messageOrMutationMessage)
+    }
+  }
+
+  add (message: MutationMessage) {
+    this.addMessage(message)
   }
 
   // if condition is falsy, error is pushed onto messages list
