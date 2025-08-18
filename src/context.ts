@@ -82,7 +82,7 @@ export class Context<AuthType = any> extends MockContext<AuthType> {
     // static methods/variables
     const ctxStatic = ctx.constructor as typeof Context
 
-    const logger = req?.log ?? console
+    const logger: { info: (msg: string) => void, error: (msg: string) => void } = req?.log ?? console
     let verifyKey: KeyObject | JWTVerifyGetKey | undefined = Context.jwtVerifyKey
     try {
       const claims = decodeJwt(token)
