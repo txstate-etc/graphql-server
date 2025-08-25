@@ -114,7 +114,7 @@ const bookclient = new API('http://bookservice')
 
 describe('multipart requests', function () {
   it('should automatically accept multipart requests', async () => {
-    const buffer = readFileSync(path.join(__dirname, '../blankpdf.pdf'))
+    const buffer = readFileSync(path.join(__dirname, '../blankpdf.pdf')) as unknown as BlobPart
     const { uploadBookData } = await bookclient.graphqlWithUploads('mutation uploadBookData ($file: UploadInfo!) { uploadBookData(file: $file) }', { file: new File([buffer], 'blankpdf.pdf', { type: 'application/pdf' }) })
     expect(uploadBookData).to.deep.equal([1264])
   })

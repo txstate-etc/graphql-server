@@ -204,6 +204,7 @@ export class GQLServer extends Server {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())
         }
+        await ctx.drainFiles()
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
           options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)?.catch(e => { res.log.error(e) })

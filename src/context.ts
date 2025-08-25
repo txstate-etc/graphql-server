@@ -63,8 +63,32 @@ export class MockContext<AuthType = any> {
     let idx = 0
     for await (const p of this.parts) {
       if (p.type === 'file') {
-        yield { multipartIndex: idx, name: p.filename, mime: p.mimetype, stream: p.file }
-        idx++
+        try {
+          yield { multipartIndex: idx, name: p.filename, mime: p.mimetype, stream: p.file }
+          idx++
+        } finally {
+          if (!p.file.readableEnded) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            for await (const chunk of p.file) {
+              // drain the stream to avoid memory leaks
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * In case we received uploads but our mutation did not handle them, we don't
+   * want to leave any file streams open, so our `/graphql` post handler will call
+   * this after graphql execution for cleanup.
+   */
+  async drainFiles () {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const file of this.files()) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const chunk of file.stream) {
+        // drain the stream to avoid memory leaks
       }
     }
   }
