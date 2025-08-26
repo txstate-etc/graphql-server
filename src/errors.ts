@@ -67,10 +67,12 @@ export class ValidatedResponse {
   addMessage (message: MutationMessage): void
   addMessage (message: string, arg?: string, type?: MutationMessageType): void
   addMessage (messageOrMutationMessage: string | MutationMessage, arg?: string, type?: MutationMessageType): void {
-    if (typeof messageOrMutationMessage === 'string') {
-      this.messages.push(new MutationMessage(messageOrMutationMessage, arg, type))
-    } else {
-      this.messages.push(messageOrMutationMessage)
+    const message = typeof messageOrMutationMessage === 'string'
+      ? new MutationMessage(messageOrMutationMessage, arg, type)
+      : messageOrMutationMessage
+    this.messages.push(message)
+    if (message.type === MutationMessageType.error) {
+      this.success = false
     }
   }
 
