@@ -65,19 +65,26 @@ export class ValidatedResponse {
    * @deprecated Use add instead
    */
   addMessage (message: MutationMessage): void
+  addMessage (message: { message: string, arg?: string, type?: MutationMessageType }): void
   addMessage (message: string, arg?: string, type?: MutationMessageType): void
-  addMessage (messageOrMutationMessage: string | MutationMessage, arg?: string, type?: MutationMessageType): void {
+  addMessage (messageOrMutationMessage: string | MutationMessage | { message: string, arg?: string, type?: MutationMessageType }, arg?: string, type?: MutationMessageType): void {
+    // @ts-expect-error: We're just relaying the args to the non-deprecated method, there's no need to match an overload signature
+    this.add(messageOrMutationMessage, arg, type)
+  }
+
+  add (message: MutationMessage): void
+  add (message: { message: string, arg?: string, type?: MutationMessageType }): void
+  add (message: string, arg?: string, type?: MutationMessageType): void
+  add (messageOrMutationMessage: string | MutationMessage | { message: string, arg?: string, type?: MutationMessageType }, arg?: string, type?: MutationMessageType): void {
     const message = typeof messageOrMutationMessage === 'string'
       ? new MutationMessage(messageOrMutationMessage, arg, type)
-      : messageOrMutationMessage
+      : messageOrMutationMessage instanceof MutationMessage
+        ? messageOrMutationMessage
+        : new MutationMessage(messageOrMutationMessage.message, messageOrMutationMessage.arg, messageOrMutationMessage.type)
     this.messages.push(message)
     if (message.type === MutationMessageType.error) {
       this.success = false
     }
-  }
-
-  add (message: MutationMessage) {
-    this.addMessage(message)
   }
 
   // if condition is falsy, error is pushed onto messages list
