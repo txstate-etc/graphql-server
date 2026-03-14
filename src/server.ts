@@ -2,7 +2,7 @@ import path from 'node:path'
 import { type FastifyRequest, type FastifyReply } from 'fastify'
 import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'fs/promises'
-import { execute, type GraphQLError, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
+import { execute, type GraphQLError, type GraphQLSchema, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
@@ -42,6 +42,15 @@ export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof
   signedQueriesWhitelist?: Set<string>
   after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: InstanceType<CustomContext>) => void | Promise<void>
   send403?: (ctx: InstanceType<CustomContext>) => boolean | Promise<boolean>
+  /**
+   * Run any async tasks that require the schema to be fully built, but need to complete before the
+   * server begins accepting requests. In DosGato CMS this is used to populate test data, which requires
+   * MockContext.executeQuery to be up and running because template validation functions execute queries
+   * against the schema.
+   *
+   * Will be given the GraphQLSchema as an argument.
+   */
+  beforeStartup?: (schema: GraphQLSchema) => Promise<void>
 }
 
 export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
@@ -140,6 +149,8 @@ export class GQLServer extends Server {
       operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
       return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
     }
+
+    await options.beforeStartup?.(schema)
 
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
