@@ -1,14 +1,14 @@
 import { Arg, Ctx, FieldResolver, Query, Resolver, Root } from 'type-graphql'
-import { Context } from '../../src'
-import { Meeting, MeetingFilter } from '../meeting/meeting.model'
-import { MeetingService } from '../meeting/meeting.service'
-import { Person, PersonFilter } from './person.model'
-import { PersonService } from './person.service'
+import { Context } from '../../src/index.ts'
+import { Meeting, MeetingFilter } from '../meeting/meeting.model.ts'
+import { MeetingService } from '../meeting/meeting.service.ts'
+import { Person, PersonFilter } from './person.model.ts'
+import { PersonService } from './person.service.ts'
 
 @Resolver(of => Person)
 export class PersonResolver {
   @Query(returns => [Person])
-  async people (@Ctx() ctx: Context, @Arg('filter', { nullable: true }) filter?: PersonFilter) {
+  async people (@Ctx() ctx: Context, @Arg('filter', type => PersonFilter, { nullable: true }) filter?: PersonFilter) {
     return await ctx.svc(PersonService).find(filter)
   }
 
@@ -18,7 +18,7 @@ export class PersonResolver {
   }
 
   @FieldResolver(returns => [Meeting])
-  async meetings (@Ctx() ctx: Context, @Root() person: Person, @Arg('filter', { nullable: true }) filter?: MeetingFilter) {
+  async meetings (@Ctx() ctx: Context, @Root() person: Person, @Arg('filter', type => MeetingFilter, { nullable: true }) filter?: MeetingFilter) {
     return await ctx.svc(MeetingService).findByPerson(person, filter)
   }
 }

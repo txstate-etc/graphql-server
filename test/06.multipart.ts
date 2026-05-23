@@ -1,14 +1,16 @@
-/* eslint-disable @typescript-eslint/no-unused-expressions */
+import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect } from 'chai'
 import { rescue, toArray } from 'txstate-utils'
 
-export type APIBaseQueryPayload = string | Record<string, undefined | string | number | Array<string | number>>
+const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+
+export type APIBaseQueryPayload = string | Record<string, undefined | string | number | (string | number)[]>
 function replaceFiles (variables: Record<string, any>, files: File[]) {
   let newVariables: Record<string, any> | undefined
-  for (const key in variables) {
-    const val = variables[key]
+  for (const [key, val] of Object.entries(variables)) {
     if (val instanceof File) {
       files.push(val)
       newVariables ??= { ...variables }
@@ -47,7 +49,7 @@ class API {
       body: opts?.body ? (opts.body instanceof FormData ? opts.body : JSON.stringify(opts.body)) : undefined
     })
     const contentType = resp.headers.get('content-type')
-    const isJsonResponse = contentType && contentType.includes('application/json')
+    const isJsonResponse = !!contentType?.includes('application/json')
     if (!resp.ok && !(resp.status === 422 && opts?.inlineValidation)) {
       if (resp.status === 401) {
         throw new Error('401')
@@ -112,9 +114,9 @@ class API {
 
 const bookclient = new API('http://bookservice')
 
-describe('multipart requests', function () {
+describe('multipart requests', () => {
   it('should automatically accept multipart requests', async () => {
-    const buffer = readFileSync(path.join(__dirname, '../blankpdf.pdf')) as unknown as BlobPart
+    const buffer = readFileSync(path.join(moduleDir, 'blankpdf.pdf')) as unknown as BlobPart
     const { uploadBookData } = await bookclient.graphqlWithUploads('mutation uploadBookData ($file: UploadInfo!) { uploadBookData(file: $file) }', { file: new File([buffer], 'blankpdf.pdf', { type: 'application/pdf' }) })
     expect(uploadBookData).to.deep.equal([1264])
   })

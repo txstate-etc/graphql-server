@@ -1,5 +1,5 @@
 import { isNotNull } from 'txstate-utils'
-import { type Meeting, type MeetingFilter } from './meeting.model'
+import type { Meeting, MeetingFilter } from './meeting.model.ts'
 
 // NOTE hosts is a subset of peopleIds
 export const meetingDb = new Map<number, Meeting>()

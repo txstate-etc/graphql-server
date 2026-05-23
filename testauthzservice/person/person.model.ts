@@ -6,10 +6,10 @@ export class Person {
   @Field(type => Int)
   id!: number
 
-  @Field()
+  @Field(type => String)
   name!: string
 
-  @Field({ nullable: true })
+  @Field(type => String, { nullable: true })
   contact?: string
 }
 
@@ -18,6 +18,6 @@ export class PersonFilter {
   @Field(type => [Int], { nullable: true })
   ids?: number[]
 
-  @Field({ nullable: true })
+  @Field(type => String, { nullable: true })
   search?: string
 }

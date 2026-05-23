@@ -6,7 +6,7 @@ export class Book {
   @Field(type => Int)
   id!: number
 
-  @Field()
+  @Field(type => String)
   title!: string
 
   authorIds!: number[]
@@ -20,6 +20,6 @@ export class BookFilter {
   @Field(type => [Int], { nullable: true })
   authorIds?: number[]
 
-  @Field({ nullable: true })
+  @Field(type => String, { nullable: true })
   search?: string
 }

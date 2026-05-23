@@ -1,8 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-expressions */
+import { describe, it } from 'node:test'
 import { expect } from 'chai'
-import { bookQuery, gatewayQuery, libraryQuery } from './01.basic'
+import { bookQuery, gatewayQuery, libraryQuery } from './01.basic.ts'
 
-describe('federation endpoints', function () {
+describe('federation endpoints', () => {
   it('should return the SDL for the book service', async () => {
     const { _service } = await bookQuery('{ _service { sdl } }')
     expect(_service.sdl.length).to.be.greaterThan(0)
@@ -13,7 +13,7 @@ describe('federation endpoints', function () {
   })
 })
 
-describe('gateway', function () {
+describe('gateway', () => {
   it('should be able to query the book service', async () => {
     const { books } = await gatewayQuery('{ books { title } }')
     expect(books.length).to.be.greaterThan(0)
@@ -48,7 +48,7 @@ describe('gateway', function () {
     const { books } = await gatewayQuery('{ books { upperCaseTitle } }')
     for (const book of books) {
       expect(book.upperCaseTitle.length).to.be.greaterThan(0)
-      expect(book.upperCaseTitle).to.not.match(/[a-z]/)
+      expect(book.upperCaseTitle).to.not.match(/[a-z]/v)
     }
   })
 })

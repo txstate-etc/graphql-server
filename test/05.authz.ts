@@ -1,7 +1,8 @@
+import { describe, it } from 'node:test'
 import { expect } from 'chai'
-import { signAuth, authzQuery } from './01.basic'
+import { signAuth, authzQuery } from './01.basic.ts'
 
-describe('query authz tests for direct people endpoint', function () {
+describe('query authz tests for direct people endpoint', () => {
   it('should only get self from people endpoint when requesting all people and not part of any meetings', async () => {
     const authn = await signAuth('client_service_test', '4')
     const query = '{ people { id, name, contact } }'
@@ -39,7 +40,7 @@ describe('query authz tests for direct people endpoint', function () {
     expect(data.people.length).equals(0)
   })
 })
-describe('query authz tests for direct meeting endpoint', function () {
+describe('query authz tests for direct meeting endpoint', () => {
   it('should only get the 2 meetings of which we are a member', async () => {
     const authn = await signAuth('client_service_test', '1')
     const query = '{ meetings { id, title } }'
@@ -65,7 +66,7 @@ describe('query authz tests for direct meeting endpoint', function () {
     expect(data.meetings.length).equals(0)
   })
 })
-describe('query authz tests for indirect people from meeting endpoint', function () {
+describe('query authz tests for indirect people from meeting endpoint', () => {
   it('should get all meetings where host or member with people info appropriately filtered; No other meetings or people should be visible.', async () => {
     const authn = await signAuth('client_service_test', '1')
     const query = 'query GetMeetingByPerson($ids:[Int!]) { meetings(filter:{ peopleIds:$ids }) { id, title, people { id, name, contact } } }'

@@ -1,5 +1,5 @@
 import { HttpError } from 'fastify-txstate'
-import { type GraphQLError } from 'graphql'
+import type { GraphQLError } from 'graphql'
 import { get, isNotNull } from 'txstate-utils'
 import { Field, ObjectType, registerEnumType } from 'type-graphql'
 
@@ -29,7 +29,7 @@ export class MutationMessage {
   @Field(type => String, { nullable: true, description: 'The path to the arg that produced the error. Dot-separated (lodash.get compatible) if it is deep inside an input type. Null if no particular arg can be blamed for the error.' })
   arg?: string
 
-  @Field({ description: 'An error message to be shown to the end user, with the context of the given arg.' })
+  @Field(type => String, { description: 'An error message to be shown to the end user, with the context of the given arg.' })
   message: string
 
   @Field(type => MutationMessageType, { description: 'The type of error message. See the enum descriptions for more detail.' })
@@ -49,7 +49,7 @@ export interface ValidatedResponseArgs {
 
 @ObjectType()
 export class ValidatedResponse {
-  @Field({ description: 'True if the mutation succeeded (e.g. saved data or passed validation), even if there were warnings.' })
+  @Field(type => Boolean, { description: 'True if the mutation succeeded (e.g. saved data or passed validation), even if there were warnings.' })
   success: boolean
 
   @Field(type => [MutationMessage])
@@ -64,16 +64,14 @@ export class ValidatedResponse {
    * push message onto messages array and mark not a success if it's fatal
    * @deprecated Use add instead
    */
-  addMessage (message: MutationMessage): void
-  addMessage (message: { message: string, arg?: string, type?: MutationMessageType }): void
+  addMessage (message: MutationMessage | { message: string, arg?: string, type?: MutationMessageType }): void
   addMessage (message: string, arg?: string, type?: MutationMessageType): void
   addMessage (messageOrMutationMessage: string | MutationMessage | { message: string, arg?: string, type?: MutationMessageType }, arg?: string, type?: MutationMessageType): void {
     // @ts-expect-error: We're just relaying the args to the non-deprecated method, there's no need to match an overload signature
     this.add(messageOrMutationMessage, arg, type)
   }
 
-  add (message: MutationMessage): void
-  add (message: { message: string, arg?: string, type?: MutationMessageType }): void
+  add (message: MutationMessage | { message: string, arg?: string, type?: MutationMessageType }): void
   add (message: string, arg?: string, type?: MutationMessageType): void
   add (messageOrMutationMessage: string | MutationMessage | { message: string, arg?: string, type?: MutationMessageType }, arg?: string, type?: MutationMessageType): void {
     const message = typeof messageOrMutationMessage === 'string'
@@ -94,19 +92,20 @@ export class ValidatedResponse {
 
   // if input contains arg and is outside allowed range, an error is added to messages
   assertBetween (input: any, arg: string, min: number, max: number) {
-    const val = get(input, arg)
+    const val = get<number | null | undefined>(input, arg)
     if (isNotNull(val) && (val < min || val > max)) {
       this.addMessage(`Value out of range, must be between ${min} and ${max}`, arg)
     }
   }
 
   assertPositive (input: any, arg: string) {
-    const val = get(input, arg)
-    if (val < 0) this.addMessage('Value must not be negative', arg)
+    const val = get<number | null | undefined>(input, arg)
+    if (val != null && val < 0) this.addMessage('Value must not be negative', arg)
   }
 
   assertLength (input: any, arg: string, min: number, max: number) {
-    const val = get(input, arg)
+    const val = get<string | unknown[] | null | undefined>(input, arg)
+    if (val == null) return
     if (val.length > max) {
       if (typeof val === 'string') this.addMessage('Character maximum exceeded.', arg)
       else this.addMessage('Too many entries.', arg)

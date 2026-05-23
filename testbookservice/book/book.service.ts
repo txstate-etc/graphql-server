@@ -1,7 +1,7 @@
-import { BaseService } from '../../src'
-import { type BookFilter } from './book.model'
-import { getBooks } from './book.database'
-import { type Author, type AuthorFilter } from '../author/author.model'
+import { BaseService } from '../../src/index.ts'
+import type { BookFilter } from './book.model.ts'
+import { getBooks } from './book.database.ts'
+import type { Author, AuthorFilter } from '../author/author.model.ts'
 
 export class BookService extends BaseService {
   async find (filter?: BookFilter) {
@@ -9,7 +9,7 @@ export class BookService extends BaseService {
   }
 
   async findById (bookId: number) {
-    return (await getBooks({ ids: [bookId] }))?.[0]
+    return (await getBooks({ ids: [bookId] })).at(0)
   }
 
   async findByAuthor (author: Author, filter?: AuthorFilter) {

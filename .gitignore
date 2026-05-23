@@ -108,3 +108,4 @@ package-lock.json
 dist
 docker-compose.override.yml
 *.d.ts
+.DS_Store

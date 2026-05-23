@@ -1,21 +1,21 @@
 import type { Readable } from 'node:stream'
-import { Field, InputType } from 'type-graphql'
+import { Field, Float, InputType } from 'type-graphql'
 
 @InputType()
 export class UploadInfo {
-  @Field()
+  @Field(type => String)
   _type!: string
 
-  @Field()
+  @Field(type => Float)
   multipartIndex!: number
 
-  @Field()
+  @Field(type => String)
   name!: string
 
-  @Field()
+  @Field(type => String)
   mime!: string
 
-  @Field()
+  @Field(type => Float)
   size!: number
 }
 

@@ -4,15 +4,11 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
-    "experimentalDecorators": true,
     "skipLibCheck": true,
-    "emitDecoratorMetadata": true,
     "useDefineForClassFields": false,
     "rewriteRelativeImportExtensions": true
   },
-  "include": ["src"]
+  "include": ["."]
 }

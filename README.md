@@ -29,9 +29,9 @@ server.start({
 * `voyagerEndpoint?: string|false` (default `/voyager`) - endpoint to access GraphQL Voyager for visualizing your spec. `false` to disable.
 * `customContext?: Type<CustomContext>` (default `Context`) - provide a custom context class for more request-scoped state or different authentication code (more info later).
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
-* `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system. See "Federation" below for more info.
+* `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system (emits Apollo Federation v2 subgraph SDL). See "Federation" below for more info.
 * `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
-* `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `client_id` service and query string.
+* `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `clientId` service and query string.
 * `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
 
 ## Fastify and GraphQL server
@@ -49,6 +49,27 @@ async books (@Ctx() ctx: Context) {
   return await ctx.svc(BookService).fetchAll()
 }
 ```
+
+### Prefetching per-request state
+`Context` exposes an overridable `async prefetch()` hook that the server awaits once per request, after authentication has resolved (`ctx.auth` is populated) and before any query execution or `send403` check. It is the recommended seam for loading the authenticated user's roles, permissions, or any other request-scoped data you want available synchronously in your resolvers and services.
+
+```typescript
+import { Context } from '@txstate-mws/graphql-server'
+
+export class MyContext extends Context {
+  roles: Set<string> = new Set()
+
+  async prefetch () {
+    if (!this.auth?.username) return
+    this.roles = await loadRolesForUser(this.auth.username)
+  }
+}
+```
+Pass `MyContext` via `customContext` when starting the server and your `mayView` / `mayCreate` checks can stay synchronous because `this.ctx.roles` is already loaded.
+
+If `send401` is set and the request is unauthenticated, `prefetch` is skipped (the request is already on its way to a 401).
+
+> The legacy `waitForAuth()` hook is still called by the default `prefetch()` for backwards compatibility, but is deprecated. New code should override `prefetch()`.
 
 ## Services
 We mentioned services in the previous section, but we haven't talked about what those are yet. Keeping your project organized is important, and one key way to do that is to split responsibilities. First you have `typegraphql` resolvers that are as thin as possible while fully specifying your GraphQL schema. The resolvers make calls to service classes that implement your business logic, authorization, caching, dataloading, and database interactions. I usually like to split things a little further so that database-specific SQL is in yet another layer, but we won't cover that in this README as it's not necessary for `graphql-server`.
@@ -99,24 +120,33 @@ async mayView (user: User) {
 ```
 
 ## Authentication
-By default the library assumes it will get a JWT as a bearer token, and it places the entire payload in ctx.auth. If authentication is not included in the request or fails to validate, ctx.auth will be undefined.
+Authentication is delegated to [fastify-txstate](https://github.com/txstate-etc/fastify-txstate). You provide an `authenticate` function when constructing `GQLServer`; fastify-txstate runs it on each request, attaches the result to `req.auth`, and the library reads it into `ctx.auth`. If authentication is not included in the request or `authenticate` returns `undefined`, `ctx.auth` will be `undefined`.
 
-The JWT base64 encoded secret can be provided in the `JWT_SECRET` environment variable. If you are using asymmetric signatures, you can put the public key in `JWT_SECRET_VERIFY` (this library does not make use of the private key). If both environment variables are set the asymmetric `JWT_SECRET_VERIFY` key is used.
-```bash
-# Examples of how to create keys for context jwt tokens
-# Symetric key
-JWT_SECRET=$(cat /dev/urandom | head -c32 | base64 -)
-# Private and public keys
-JWT_SECRET_SIGN=$(openssl genrsa 2048 2>/dev/null)
-JWT_SECRET_VERIFY=$(echo "$JWT_SECRET_SIGN" | openssl rsa -outform PEM -pubout 2>/dev/null)
+```typescript
+import { GQLServer } from '@txstate-mws/graphql-server'
+import type { FastifyRequest } from 'fastify'
+import type { FastifyTxStateAuthInfo } from 'fastify-txstate'
+
+async function authenticate (req: FastifyRequest): Promise<FastifyTxStateAuthInfo | undefined> {
+  // Validate however you like — bearer JWT, cookie, session lookup, etc.
+  // Return an object with at least `username` (and optionally `sessionId`,
+  // `clientId`, `token`, `accessToken`, `issuerConfig`).
+  // Return undefined when the request is unauthenticated.
+}
+
+const server = new GQLServer({ authenticate })
 ```
+
+The shape of the object you return is whatever your consumer expects on `ctx.auth`. The default `Context<AuthType>` constrains `AuthType` to extend `FastifyTxStateAuthInfo`, so common fields like `username`, `clientId`, and `token` are available without extra typing. Pass a wider type as a generic if you need additional fields (see "Typescript Note" under Authorization below).
+
+This library does NOT read `JWT_SECRET` or `JWT_SECRET_VERIFY` itself — JWT verification, key sourcing, and token shape are entirely up to your `authenticate` implementation. If you want OIDC-style discovery, fastify-txstate's `authenticateAll` helper is one option; for symmetric HS256 the test suite's [testservicecommon/authenticate.ts](testservicecommon/authenticate.ts) is a minimal reference.
 
 ## Query Scoping
 Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `requireSignedQueries` option to true, queries received by the server will require an associated query digest that scopes the query requested to the client service.
 
 Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` field in the JWT payload, which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. The private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
 
-When the graphql-server sees a request with query scoping turned on, it will first verify the JWT authn token and pull the client service name found in the `client_id` field of the authentication payload. The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
+When the graphql-server sees a request with query scoping turned on, it pulls the client service name from `ctx.auth.clientId` (populated by your `authenticate` function — typically from the `client_id` claim of the auth payload). The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
 ```bash
 # Examples of how to create keys used for query digest jwt tokens
 JWT_QUERY_DIGEST_PRIVATE_KEY=$(openssl genrsa 2048 2>/dev/null)
@@ -125,19 +155,20 @@ JWT_QUERY_DIGEST_PUBLIC_KEY=$(echo "$JWT_QUERY_DIGEST_PRIVATE_KEY" | openssl rsa
 
 Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `signedQueriesWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
 
-If you need to support cookies or tokens in the query string or any other sort of scheme, you can subclass the provided `Context` class, override `tokenFromReq` (to retrieve the JWT) or `authFromReq` (to do all the extraction and validation yourself), and pass your subclass in as a configuration option:
+Cookies, tokens in the query string, or any other transport scheme are handled inside your `authenticate` function — pull whatever you need off the `FastifyRequest` and return the auth object (or `undefined`). The library no longer exposes `tokenFromReq` / `authFromReq` overrides on `Context`; use `authenticate` instead.
+
+If you also need request-scoped state beyond what `Context` provides (extra caches, helper methods, etc.), you can still subclass `Context` and pass your subclass via the `customContext` option:
 ```typescript
 import { GQLServer, Context } from '@txstate-mws/graphql-server'
-class CookieContext extends Context {
-  tokenFromReq: req => req.cookies.token
+class MyContext extends Context {
+  // add request-scoped state or helpers here
 }
-const server = new GQLServer({ ... fastify configuration })
-server.start({
-  ...,
-  customContext: CookieContext
+const server = new GQLServer({ authenticate })
+await server.start({
+  resolvers: [...],
+  customContext: MyContext
 })
 ```
-`authFromReq`, if you write it, should return an object for `ctx.auth` or `undefined` if authentication could not be established (do NOT return an object with an empty user id!). It can be async or return a promise if you need to do a lookup, like searching a database for a session id.
 
 Keep in mind that if you add brand new methods to your custom Context class, you'll need to reference your class in every resolver after `@Ctx()`:
 ```typescript
@@ -146,7 +177,6 @@ async authors (@Ctx() ctx: CustomContext, @Root() book: Book) {
   // return the authors
 }
 ```
-If all you've done is replace `authFromReq` or `tokenFromReq`, this isn't necessary because all the types are compatible and the context object you'll receive will still be an instance of whatever you passed as `customContext`.
 ### Enforcing/detecting authentication
 As documented above, the `send401` option can be set to make sure your entire API require authentication. If your API is partially public, you'll want to keep this false. Then you can simply call `ctx.requireAuth()` in any resolver that requires authentication or `this.requireAuth()` in any service method.
 
@@ -270,6 +300,8 @@ When `NODE_ENV` is set to `development`, the request log is mostly disabled, onl
 If your GraphQL API is intended to be a member of a federation gateway, graphql-server provides some
 extra support for you. When you set the option `federated: true`, it will automatically add the federation directives and the `_service` and `_entities` resolvers based on your usage of the directives (more on that below).
 
+This library targets Apollo Federation v2 (spec v2.7). The required `@link` schema directive is auto-injected; you don't need to declare it yourself.
+
 It's up to you to use the directives appropriately. Following are some of the things you'll want to do.
 
 ### Namespacing
@@ -315,17 +347,14 @@ The Library type needs a `books` property that returns books from the book servi
 
 First, create a type for the stub:
 ```typescript
-@Directive('@extends')
+@Directive('@key(fields: "id", resolvable: false)')
 @ObjectType()
 export class Book {
-  @Directive('@external')
   @Field(type => Int)
   id!: number
 }
 ```
-The `@extends` directive lets the gateway know that we don't own this type and we need its help to fetch it. You must add the `@extends` directive even if you are not adding any new properties to the type (see below for more on that).
-
-The `@external` directive lets the gateway know which fields belong to another graph. All the fields involved in another graph's `@key` directive should be listed on your stub and marked external. If you have any fields not marked external, the gateway will add them to the federated graph and assume that you are responsible for filling them with data (see below section for more).
+`resolvable: false` lets the gateway know that we don't own this type — we just reference it by key — and that the gateway should fetch it from whichever service does own it. The fields involved in another graph's `@key` directive should be listed on your stub. (Federation v2 dropped the `@extends` directive in favor of declaring the stub type directly with `@key`; see [Apollo's federation v2 docs](https://www.apollographql.com/docs/federation/entities/) for the full migration.)
 
 Then create a resolver that creates stubs:
 ```typescript
@@ -347,13 +376,11 @@ Sometimes you will not only connect to another graph, but add properties to some
 
 Since the library service owns all the data that links libraries to books, the library service must implement this resolver, even though the library service does not own the `Book` type.
 
-Since the gateway will need to come to you to get properties filled out, you'll need to add the `@key` directive to your extended stub so that the gateway knows which fields to send to you.
+Since the gateway will need to come to you to get properties filled out, you'll need to add the `@key` directive to your extended type so that the gateway knows which fields to send to you. Unlike a pure stub (above), you don't pass `resolvable: false` here because this graph does own the new field resolvers attached to the type.
 ```typescript
-@Directive('@extends')
 @Directive('@key(fields: "id")')
 @ObjectType()
 export class Book {
-  @Directive('@external')
   @Field(type => Int)
   id!: number
 }
@@ -377,13 +404,11 @@ export class BookResolver {
   }
 }
 ```
-Keep in mind that any field you require must be listed in your stub model as `@external`.
+Keep in mind that any field you require must be listed on your model and marked `@external` so the gateway knows the field belongs to another graph. (Key fields don't need `@external` in Federation v2 — only fields used by `@requires` or `@provides`.)
 ```typescript
-@Directive('@extends')
 @Directive('@key(fields: "id")')
 @ObjectType()
 export class Book {
-  @Directive('@external')
   @Field(type => Int)
   id!: number
 
@@ -395,6 +420,16 @@ export class Book {
 This is so that the federation gateway can validate that the type of data you require still matches what will be provided in the host service. You may think this check is unnecessary, but Apollo Gateway will fail to validate so you don't have much choice.
 
 Something else in this example was a little tricky. The isbn CANNOT be marked as nullable for graphql, because the original type does not mark isbn as nullable and they must match. However, it needs to be marked optional for typescript so that you can make stubs (since you don't have the isbn when making a stub). When you implement your resolver, you'll have to use an exclamation mark (as in the example above) to assure typescript that the gateway will have provided it.
+
+#### v2-only directives
+Federation v2 introduces a few directives beyond `@key` / `@requires` / `@provides` / `@external`. They're all string pass-throughs through `@Directive(...)`:
+
+- `@shareable` — mark a field as legitimately resolvable by more than one subgraph: `@Directive('@shareable')` on the `@Field`.
+- `@inaccessible` — hide a field or type from the supergraph (still queryable directly on this subgraph): `@Directive('@inaccessible')`.
+- `@override(from: "subgraph-name")` — take ownership of a field that previously lived in another subgraph (useful during a migration): `@Directive('@override(from: "books")')`.
+- `@tag(name: "...")` — attach metadata for downstream tooling like contracts or GraphOS: `@Directive('@tag(name: "public")')`.
+
+Reach for these only when you actually need them; consumers who do will already know what they're for.
 
 ### Using the @provides directive
 TODO

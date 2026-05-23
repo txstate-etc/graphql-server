@@ -1,7 +1,8 @@
+import type { FastifyTxStateAuthInfo } from 'fastify-txstate'
 import { filterAsync, isNotNull } from 'txstate-utils'
-import { type Context, type Type } from './context'
+import type { Context, Type } from './context.ts'
 
-export abstract class BaseService<AuthType = any> {
+export abstract class BaseService<AuthType extends FastifyTxStateAuthInfo = FastifyTxStateAuthInfo> {
   constructor (protected ctx: Context<AuthType>) {}
 
   get loaders () {
@@ -29,7 +30,7 @@ export abstract class BaseService<AuthType = any> {
  * Use this as a base class for your service to add a removeUnauthorized method that can
  * help you filter out objects the current user isn't allowed to see.
  */
-export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
+export abstract class AuthorizedService<AuthType extends FastifyTxStateAuthInfo = FastifyTxStateAuthInfo, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
   async removeUnauthorized (object: ObjType | undefined): Promise<RedactedType | ObjType | undefined>
   async removeUnauthorized (objects: ObjType[]): Promise<RedactedType[] | ObjType[]>
   async removeUnauthorized (objects: ObjType[] | ObjType | undefined) {
@@ -75,7 +76,7 @@ export abstract class AuthorizedService<AuthType = any, ObjType = any, RedactedT
  * async calls. If you can do that, it will greatly improve performance as you will not have to make
  * several new promises per array element, which is rather expensive.
  */
-export abstract class AuthorizedServiceSync<AuthType = any, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
+export abstract class AuthorizedServiceSync<AuthType extends FastifyTxStateAuthInfo = FastifyTxStateAuthInfo, ObjType = any, RedactedType = ObjType> extends BaseService<AuthType> {
   removeUnauthorized (object: ObjType | undefined): RedactedType | ObjType | undefined
   removeUnauthorized (objects: ObjType[]): RedactedType[] | ObjType[]
   removeUnauthorized (objects: ObjType[] | ObjType | undefined) {

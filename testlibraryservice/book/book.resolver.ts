@@ -1,8 +1,8 @@
 import { Ctx, Directive, FieldResolver, Resolver, Root } from 'type-graphql'
-import { Context } from '../../src'
-import { Library } from '../library/library.model'
-import { LibraryService } from '../library/library.service'
-import { Book } from './book.model'
+import { Context } from '../../src/index.ts'
+import { Library } from '../library/library.model.ts'
+import { LibraryService } from '../library/library.service.ts'
+import { Book } from './book.model.ts'
 
 @Resolver(of => Book)
 export class BookResolver {

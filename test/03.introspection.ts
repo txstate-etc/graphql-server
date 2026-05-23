@@ -1,6 +1,7 @@
-/* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable @typescript-eslint/naming-convention -- GraphQL introspection types use __schema / __type / __typename */
+import { describe, it } from 'node:test'
 import { expect } from 'chai'
-import { basicBookQuery, bookQuery, gatewayQuery } from './01.basic'
+import { basicBookQuery, bookQuery, gatewayQuery } from './01.basic.ts'
 
 describe('introspection', () => {
   it('should get error when asking schema doc for basic book service which has introspection disabled', async () => {

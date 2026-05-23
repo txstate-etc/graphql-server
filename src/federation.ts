@@ -3,8 +3,18 @@
  * This adaptation is also MIT licensed.
  */
 
-/* eslint-disable @typescript-eslint/restrict-plus-operands */
-/* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable @typescript-eslint/naming-convention,
+                  @typescript-eslint/no-unsafe-member-access,
+                  @typescript-eslint/no-unsafe-assignment,
+                  @typescript-eslint/no-unsafe-return,
+                  @typescript-eslint/no-unsafe-call,
+                  @typescript-eslint/no-unsafe-argument,
+                  @typescript-eslint/no-unnecessary-condition
+   -- adapted from mercurius-js; performs federation AST surgery against
+      loosely-typed GraphQL internals (mutating Kind values, walking
+      extensionASTNodes, dynamic resolveMap dispatch). Federation spec
+      mandates names like _Any / _service / __typename. Strict typing here
+      would require rewriting around the graphql lib's internal types. */
 import {
   GraphQLSchema,
   GraphQLObjectType,
@@ -14,6 +24,7 @@ import {
   isTypeDefinitionNode,
   isTypeExtensionNode,
   isObjectType,
+  type DocumentNode,
   type TypeDefinitionNode,
   type TypeExtensionNode,
   type NameNode,
@@ -21,28 +32,49 @@ import {
   type GraphQLResolveInfo,
   UniqueDirectivesPerLocationRule
 } from 'graphql'
-import { specifiedSDLRules } from 'graphql/validation/specifiedRules'
-import { validateSDL } from 'graphql/validation/validate'
+import { specifiedSDLRules } from 'graphql/validation/specifiedRules.js'
+import { validateSDL } from 'graphql/validation/validate.js'
 import { printSchemaWithDirectives } from '@graphql-tools/utils'
 
 type TypeNode = TypeDefinitionNode | TypeExtensionNode | DirectiveDefinitionNode
 
 function hasExtensionDirective (node: any) {
   for (const directive of node.directives ?? []) {
-    if (directive === 'extends' || directive === 'requires') return true
+    if (directive === 'requires') return true
   }
   return false
 }
 
+const FEDERATION_SPEC_URL = 'https://specs.apollo.dev/federation/v2.7'
+const FEDERATION_LINK_IMPORTS = [
+  '@key',
+  '@requires',
+  '@provides',
+  '@external',
+  '@shareable',
+  '@inaccessible',
+  '@override',
+  '@tag',
+  '@composeDirective',
+  '@interfaceObject'
+]
+
+const LINK_PREAMBLE = `extend schema @link(url: "${FEDERATION_SPEC_URL}", import: [${FEDERATION_LINK_IMPORTS.map(d => `"${d}"`).join(', ')}])`
+
 const BASE_FEDERATION_TYPES = `
   scalar _Any
-  scalar _FieldSet
+  scalar FieldSet
 
-  directive @external on FIELD_DEFINITION
-  directive @requires(fields: _FieldSet!) on FIELD_DEFINITION
-  directive @provides(fields: _FieldSet!) on FIELD_DEFINITION
-  directive @key(fields: _FieldSet!) on OBJECT | INTERFACE
-  directive @extends on OBJECT | INTERFACE
+  directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+  directive @requires(fields: FieldSet!) on FIELD_DEFINITION
+  directive @provides(fields: FieldSet!) on FIELD_DEFINITION
+  directive @external on OBJECT | FIELD_DEFINITION
+  directive @shareable repeatable on OBJECT | FIELD_DEFINITION
+  directive @inaccessible on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+  directive @override(from: String!, label: String) on FIELD_DEFINITION
+  directive @tag repeatable on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+  directive @composeDirective(name: String!) repeatable on SCHEMA
+  directive @interfaceObject on OBJECT
 `
 
 const FEDERATION_SCHEMA = `
@@ -158,19 +190,17 @@ function addEntitiesResolver (schema: GraphQLSchema) {
     const queryFields = query.getFields()
     queryFields._entities = {
       ...queryFields._entities,
-      resolve: (_source: any, { representations }: any, context: any, info: GraphQLResolveInfo) => {
-        return representations.map((reference: any) => {
-          const { __typename } = reference
+      resolve: (_source: any, { representations }: any, context: any, info: GraphQLResolveInfo) => representations.map((reference: any) => {
+        const { __typename } = reference
 
-          const result = resolveMap[__typename]?.(reference, {}, context, info) ?? reference
+        const result = resolveMap[__typename]?.(reference, {}, context, info) ?? reference
 
-          if (typeof result?.then === 'function') {
-            return result.then((x: any) => addTypeNameToResult(x, __typename))
-          }
+        if (typeof result?.then === 'function') {
+          return result.then((x: any) => addTypeNameToResult(x, __typename))
+        }
 
-          return addTypeNameToResult(result, __typename)
-        })
-      }
+        return addTypeNameToResult(result, __typename)
+      })
     }
   }
 
@@ -197,11 +227,8 @@ function addServiceResolver (schema: any, originalSchemaSDL: any) {
 }
 
 export function buildFederationSchema (schema: GraphQLSchema) {
-  const originalSchemaSDL = printSchemaWithDirectives(schema)
-    /* these 3 lines are required only for compatibility with mercurius gateway */
-    .replace(/schema\s?{[\s\S]*?}\s*/, '')
-    .replace(/^type Query/m, 'extend type Query')
-    .replace(/^type Mutation/m, 'extend type Mutation')
+  const originalSchemaSDL = LINK_PREAMBLE + '\n\n'
+    + printSchemaWithDirectives(schema).replace(/schema\s?\{[\s\S]*?\}\s*/v, '')
   const { typeStubs, extensions, definitions } = getStubTypes(Object.values(schema.getTypeMap()) as any)
 
   let federationSchema = extendSchema(
@@ -212,19 +239,19 @@ export function buildFederationSchema (schema: GraphQLSchema) {
 
   // Add type stubs - only needed for federation
   federationSchema = extendSchema(federationSchema, {
-    kind: Kind.DOCUMENT,
+    kind: Kind.DOCUMENT as const,
     definitions: typeStubs as any
   }, { assumeValidSDL: true })
 
   // Add default type definitions
   federationSchema = extendSchema(federationSchema, {
-    kind: Kind.DOCUMENT,
+    kind: Kind.DOCUMENT as const,
     definitions
   }, { assumeValidSDL: true })
 
   // Add all extensions
-  const extensionsDocument = {
-    kind: Kind.DOCUMENT,
+  const extensionsDocument: DocumentNode = {
+    kind: Kind.DOCUMENT as const,
     definitions: extensions
   }
 

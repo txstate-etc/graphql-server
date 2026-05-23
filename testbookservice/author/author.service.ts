@@ -1,7 +1,7 @@
-import { BaseService } from '../../src'
-import { type AuthorFilter } from './author.model'
-import { getAuthors } from './author.database'
-import { type Book } from '../book/book.model'
+import { BaseService } from '../../src/index.ts'
+import type { AuthorFilter } from './author.model.ts'
+import { getAuthors } from './author.database.ts'
+import type { Book } from '../book/book.model.ts'
 
 export class AuthorService extends BaseService {
   async find (filter?: AuthorFilter) {

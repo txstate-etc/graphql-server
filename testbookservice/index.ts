@@ -1,10 +1,11 @@
 import fastifyMultipart from '@fastify/multipart'
-import { GQLServer } from '../src'
-import { AuthorResolver } from './author/author.resolver'
-import { BookResolver } from './book/book.resolver'
+import { GQLServer } from '../src/index.ts'
+import { authenticate } from '../testservicecommon/authenticate.ts'
+import { AuthorResolver } from './author/author.resolver.ts'
+import { BookResolver } from './book/book.resolver.ts'
 
 (async () => {
-  const server = new GQLServer()
+  const server = new GQLServer({ authenticate })
   await server.app.register(fastifyMultipart)
   await server.start({
     resolvers: [AuthorResolver, BookResolver],

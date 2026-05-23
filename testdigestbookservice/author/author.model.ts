@@ -6,7 +6,7 @@ export class Author {
   @Field(type => Int)
   id!: number
 
-  @Field()
+  @Field(type => String)
   name!: string
 }
 
@@ -15,6 +15,6 @@ export class AuthorFilter {
   @Field(type => [Int], { nullable: true })
   ids?: number[]
 
-  @Field({ nullable: true })
+  @Field(type => String, { nullable: true })
   search?: string
 }

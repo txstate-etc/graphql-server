@@ -1,16 +1,22 @@
 import path from 'node:path'
-import { type FastifyRequest, type FastifyReply } from 'fastify'
-import Server, { devLogger, type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
-import { readFile } from 'fs/promises'
-import { execute, type GraphQLError, type GraphQLSchema, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
+import { Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
+import type { Multipart } from '@fastify/multipart'
+import type { FastifyRequest, FastifyReply } from 'fastify'
+import Server, { type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
+import { readFile } from 'node:fs/promises'
+import { execute, type GraphQLError, type GraphQLSchema, type DefinitionNode, type OperationDefinitionNode, Kind, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
+import pino from 'pino'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
-import { composeQueryDigest, QueryDigest } from './querydigest'
-import { Context, MockContext } from './context'
-import { ExecutionError, ParseError, AuthError } from './errors'
-import { buildFederationSchema } from './federation'
-import { NoIntrospection, shasum } from './util'
+import { composeQueryDigest, QueryDigest } from './querydigest.ts'
+import { Context, MockContext } from './context.ts'
+import { ExecutionError, ParseError, AuthError } from './errors.ts'
+import { buildFederationSchema } from './federation.ts'
+import { NoIntrospection, shasum } from './util.ts'
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 
 interface PlaygroundSettings {
   'general.betaUpdates'?: boolean
@@ -28,7 +34,7 @@ interface PlaygroundSettings {
   'schema.polling.interval'?: number
 }
 
-export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof Context> extends BuildSchemaOptions {
+export interface GQLStartOpts<CustomContext extends typeof Context = typeof Context> extends BuildSchemaOptions {
   port?: number
   gqlEndpoint?: string | string[]
   playgroundEndpoint?: string | false
@@ -40,7 +46,7 @@ export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof
   introspection?: boolean
   requireSignedQueries?: boolean
   signedQueriesWhitelist?: Set<string>
-  after?: (queryTime: number, operationName: string, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: InstanceType<CustomContext>) => void | Promise<void>
+  after?: (queryTime: number, operationName: string | undefined, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: InstanceType<CustomContext>) => void | Promise<void>
   send403?: (ctx: InstanceType<CustomContext>) => boolean | Promise<boolean>
   /**
    * Run any async tasks that require the schema to be fully built, but need to complete before the
@@ -53,24 +59,43 @@ export interface GQLStartOpts <CustomContext extends typeof MockContext = typeof
   beforeStartup?: (schema: GraphQLSchema) => Promise<void>
 }
 
-export interface GQLRequest { Body: { operationName: string, query: string, variables?: object, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
+export interface GQLRequest { Body: { operationName?: string, query: string, variables?: Record<string, unknown>, extensions?: { persistedQuery?: { version: number, sha256Hash: string }, querySignature: string } } }
 
-export const gqlDevLogger = {
-  ...devLogger,
-  info: (msg: any) => {
-    if (msg.res) {
-      console.info(`${Math.round(msg.responseTime)}ms ${msg.res.extraLogInfo?.query?.replace(/[\s]+/g, ' ') ?? `${msg.res.statusCode} ${msg.res.request?.method ?? ''} ${msg.res.request?.url ?? ''}`}`)
-    } else if (!msg.req) {
-      console.info(msg)
-    }
+interface PinoLogChunk {
+  res?: {
+    extraLogInfo?: { query?: string }
+    statusCode?: number
+    request?: { method?: string, url?: string }
   }
+  err?: unknown
+  req?: unknown
+  msg?: string
+  responseTime?: number
 }
-const authErrorRegex = /authentication/i
-async function doNothing () {}
+
+export const gqlDevLogger = pino({ level: 'info' }, new Writable({
+  write (chunk, _encoding, callback) {
+    const obj = JSON.parse(String(chunk)) as PinoLogChunk
+    if (obj.res) {
+      const formatted = obj.res.extraLogInfo?.query?.replace(/[\s]+/gv, ' ') ?? `${obj.res.statusCode} ${obj.res.request?.method ?? ''} ${obj.res.request?.url ?? ''}`
+      // eslint-disable-next-line no-console -- dev logger output
+      console.info(`${Math.round(obj.responseTime ?? 0)}ms ${formatted}`)
+    } else if (obj.err) {
+      // eslint-disable-next-line no-console -- dev logger output
+      console.error(obj.err)
+    } else if (!obj.req) {
+      // eslint-disable-next-line no-console -- dev logger output
+      console.info(obj.msg ?? obj)
+    }
+    callback()
+  }
+}))
+const authErrorRegex = /authentication/iv
+const doNothing = async () => { /* default options.after */ }
 export class GQLServer extends Server {
   constructor (config?: FastifyTxStateOptions) {
     super({
-      logger: (process.env.NODE_ENV !== 'development'
+      loggerInstance: (process.env.NODE_ENV !== 'development'
         ? prodLogger
         : gqlDevLogger),
       ...config
@@ -78,7 +103,7 @@ export class GQLServer extends Server {
   }
 
   public async start (options?: number | GQLStartOpts) {
-    if (typeof options === 'number' || !options?.resolvers?.length) throw new Error('Must start graphql server with some resolvers.')
+    if (typeof options === 'number' || !options?.resolvers.length) throw new Error('Must start graphql server with some resolvers.')
     options.gqlEndpoint ??= '/graphql'
     options.gqlEndpoint = toArray(options.gqlEndpoint)
     options.playgroundSettings ??= {}
@@ -92,24 +117,24 @@ export class GQLServer extends Server {
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
       this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
-        res = res.type('text/html')
-        const pg = (await readFile(path.join(__dirname, 'playground.html'))).toString('utf-8')
+        res.type('text/html')
+        const pg = (await readFile(path.join(moduleDir, 'playground.html'))).toString('utf-8')
         return pg
-          .replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0])
-          .replace(/GRAPHQL_SETTINGS/, JSON.stringify(options.playgroundSettings))
-          .replace(/API_PREFIX/, process.env.API_PREFIX ?? '')
+          .replace(/GRAPHQL_ENDPOINT/v, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0])
+          .replace(/GRAPHQL_SETTINGS/v, JSON.stringify(options.playgroundSettings))
+          .replace(/API_PREFIX/v, process.env.API_PREFIX ?? '')
       })
       this.app.get('/playground.js', async (req, res) => {
-        res = res.type('text/javascript')
-        const pg = (await readFile(path.join(__dirname, 'playground.js'))).toString('utf-8')
+        res.type('text/javascript')
+        const pg = (await readFile(path.join(moduleDir, 'playground.js'))).toString('utf-8')
         return pg
       })
     }
     if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
       this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
-        res = res.type('text/html')
-        const pg = (await readFile(path.join(__dirname, 'voyager.html'))).toString('utf-8')
-        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/, (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
+        res.type('text/html')
+        const pg = (await readFile(path.join(moduleDir, 'voyager.html'))).toString('utf-8')
+        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/v, (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
       })
     }
 
@@ -138,16 +163,16 @@ export class GQLServer extends Server {
       maxSize: 1024 * 1024 * 2,
       sizeCalculation: (entry: boolean, key: string) => key.length + 1
     })
-    ContextClass.init()
     if (options.requireSignedQueries) {
       QueryDigest.init()
     }
 
-    (MockContext as any).executeQuery = async (ctx: MockContext, query: string, variables?: any, operationName?: string) => {
+    type ExecuteQueryFn = (ctx: MockContext, query: string, variables?: Record<string, unknown>, operationName?: string) => Promise<unknown>
+    ;(MockContext as unknown as { executeQuery: ExecuteQueryFn }).executeQuery = async (ctx, query, variables, operationName) => {
       const parsedQuery = await parsedQueryCache.get(query)
       if (parsedQuery instanceof ParseError) throw new Error(parsedQuery.toString())
-      operationName ??= (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
-      return await execute(schema, parsedQuery, {}, ctx, variables, operationName)
+      operationName ??= parsedQuery.definitions.find((def: DefinitionNode): def is OperationDefinitionNode => def.kind === Kind.OPERATION_DEFINITION)?.name?.value
+      return await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: variables, operationName })
     }
 
     await options.beforeStartup?.(schema)
@@ -155,37 +180,40 @@ export class GQLServer extends Server {
     const handlePost = async (req: FastifyRequest<GQLRequest>, res: FastifyReply) => {
       try {
         const ctx = new ContextClass(req)
-        await ctx.waitForAuth()
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+
         if ((options.send401 || options.requireSignedQueries) && ctx.auth == null) {
           throw new HttpError(401, 'all graphql requests require authentication, including introspection')
         }
+        await ctx.prefetch()
         if (options.send403 && await options.send403(ctx)) {
           throw new HttpError(403, 'Not authorized to use this service.')
         }
 
         let body: GQLRequest['Body']
-        if (req.isMultipart?.()) {
+        if (typeof req.isMultipart === 'function' && req.isMultipart()) {
           const parts = req.parts()
-          const { value, done } = await parts.next()
-          const json = value.value
-          body = JSON.parse(json)
-          if (!done) ctx.setParts(parts)
+          const next = await parts.next()
+          const part = next.value as Multipart | undefined
+          if (part?.type !== 'field' || typeof part.value !== 'string') {
+            throw new HttpError(400, 'first multipart segment must be a JSON-encoded GraphQL request')
+          }
+          body = JSON.parse(part.value) as GQLRequest['Body']
+          if (!next.done) ctx.setParts(parts)
         } else {
           body = req.body
         }
 
-        let query: string | undefined = body.query
+        let query: string = body.query
         if (options.requireSignedQueries) {
-          if (ctx.auth?.client_id == null) {
+          if (ctx.auth?.clientId == null) {
             throw new HttpError(401, 'request requires authentication with client service')
-          } else if (!(options.signedQueriesWhitelist?.has(ctx.auth.client_id))) {
+          } else if (!options.signedQueriesWhitelist!.has(ctx.auth.clientId)) {
             const qd = new QueryDigest(req)
             if (qd.jwtToken == null) throw new HttpError(400, 'request requires signed query digest')
             if (!persistedVerifiedQueryDigestCache.get(qd.jwtToken + query)) {
               const digest = await qd.getVerifiedDigest()
               if (digest == null) throw new HttpError(400, 'request contains a missing or invalid query digest')
-              if (digest !== composeQueryDigest(ctx.auth.client_id, query)) throw new HttpError(400, 'request contains a mismatched client service or query')
+              if (digest !== composeQueryDigest(ctx.auth.clientId, query)) throw new HttpError(400, 'request contains a mismatched client service or query')
               persistedVerifiedQueryDigestCache.set(qd.jwtToken + query, true)
             }
           }
@@ -196,10 +224,11 @@ export class GQLServer extends Server {
             if (hash !== shasum(query)) throw new HttpError(401, 'provided sha does not match query')
             persistedQueryCache.set(hash, query)
           } else {
-            query = persistedQueryCache.get(hash)
-            if (!query) {
+            const cached = persistedQueryCache.get(hash)
+            if (!cached) {
               return { errors: [{ message: 'PersistedQueryNotFound', extensions: { code: 'PERSISTED_QUERY_NOT_FOUND' } }] }
             }
+            query = cached
           }
         }
         const parsedQuery = await parsedQueryCache.get(query)
@@ -207,18 +236,19 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        const operationName: string | undefined = body.operationName ?? (parsedQuery.definitions.find((def) => def.kind === 'OperationDefinition'))?.name?.value
+        const operationName: string | undefined = body.operationName ?? parsedQuery.definitions.find((def: DefinitionNode): def is OperationDefinitionNode => def.kind === Kind.OPERATION_DEFINITION)?.name?.value
         req.log.info({ operationName, query, auth: ctx.authForLog() }, 'finished parsing query')
         const start = new Date()
-        const ret = await execute(schema, parsedQuery, {}, ctx, body.variables, operationName)
-        if (ret?.errors?.length) {
+        const ret = await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: body.variables, operationName })
+        if (ret.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())
         }
         await ctx.drainFiles()
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)?.catch(e => { res.log.error(e) })
+          const afterResult = options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)
+          if (afterResult instanceof Promise) afterResult.catch((e: unknown) => { res.log.error(e) })
         }
         return ret
       } catch (e: any) {

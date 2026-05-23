@@ -6,7 +6,7 @@ export class Meeting {
   @Field(type => Int)
   id!: number
 
-  @Field()
+  @Field(type => String)
   title!: string
 
   hosts!: number[]
@@ -22,6 +22,6 @@ export class MeetingFilter {
   @Field(type => [Int], { nullable: true })
   peopleIds?: number[]
 
-  @Field({ nullable: true })
+  @Field(type => String, { nullable: true })
   search?: string
 }

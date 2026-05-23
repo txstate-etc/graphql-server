@@ -1,7 +1,7 @@
-import { type FastifyRequest } from 'fastify'
-import { jwtVerify, type KeyLike } from 'jose'
-import { createHmac, createPublicKey } from 'crypto'
-import { type GQLRequest } from './server'
+import type { FastifyRequest } from 'fastify'
+import { jwtVerify } from 'jose'
+import { createHmac, createPublicKey, type KeyObject } from 'node:crypto'
+import type { GQLRequest } from './server.ts'
 
 // https://nodejs.org/api/crypto.html#crypto
 export function composeQueryDigest (clientId: string, query: string): string {
@@ -15,7 +15,7 @@ interface JWTQueryDigest {
 export class QueryDigest {
   // for future reference this public key may allow for rotation with
   // latest list of keys retrieved from a key service.
-  protected static jwtQueryPublicKey: KeyLike
+  protected static jwtQueryPublicKey: KeyObject
   public jwtToken?: string
   public clientQueryDigest?: string
 
@@ -47,12 +47,12 @@ export class QueryDigest {
     if (this.jwtToken) {
       try {
         // NOTE: eventually we may get jwtQueryPublicKey from server via async request.
-        const claim = await jwtVerify(this.jwtToken, QueryDigest.jwtQueryPublicKey) as any
-        const payload = claim.payload as unknown as JWTQueryDigest
-        return payload.qd
+        const claim = await jwtVerify<JWTQueryDigest>(this.jwtToken, QueryDigest.jwtQueryPublicKey)
+        return claim.payload.qd
       } catch (e) {
         // Treat token with invalid signature as if token doesn't exist
         // but log failure signature validation.
+        // eslint-disable-next-line no-console -- log signature validation failures
         console.error(e)
         return undefined
       }

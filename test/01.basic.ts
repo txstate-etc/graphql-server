@@ -1,8 +1,8 @@
+import { describe, it } from 'node:test'
+import { createHmac, createPrivateKey, createSecretKey } from 'node:crypto'
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import { expect } from 'chai'
-import { sleep } from 'txstate-utils'
 import { SignJWT } from 'jose'
-import { createHmac, createPrivateKey, createSecretKey } from 'crypto'
 
 export const whitelistedClientId = 'whitelisted-service-1'
 export const clientId = process.env.QUERYSCOPE_CLIENT_ID ?? 'non-whitelisted-service'
@@ -26,7 +26,7 @@ const gatewayclient = axios.create({
   baseURL: 'http://gateway'
 })
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
+// eslint-disable-next-line @typescript-eslint/naming-convention -- client_id is the JWT spec claim name
 export async function signAuth (client_id: string, user: string): Promise<string> {
   const jwtSecret = process.env.JWT_SECRET
   if (jwtSecret == null) throw new Error('JWT secret has not been set. secret is required for testing')
@@ -55,7 +55,7 @@ export async function signQueryDigest (digest: string): Promise<string> {
 }
 async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: any, config?: AxiosRequestConfig, querySignature?: string) {
   try {
-    const resp = await client.post<any>('graphql', {
+    const resp = await client.post('graphql', {
       query,
       ...(variables ? { variables } : {}),
       ...(querySignature ? { extensions: { querySignature } } : {})
@@ -65,7 +65,7 @@ async function gqlQuery<T> (client: AxiosInstance, query: string, variables?: an
     return resp.data.data as T
   } catch (e: any) {
     if (!e.response) throw e
-    throw new Error(JSON.stringify(e.response.data, undefined, 2))
+    throw new Error(JSON.stringify(e.response.data, undefined, 2), { cause: e })
   }
 }
 export async function bookQuery<T = any> (query: string, variables?: any) {
@@ -87,89 +87,7 @@ export async function gatewayQuery<T = any> (query: string, variables?: any) {
   return await gqlQuery<T>(gatewayclient, query, variables)
 }
 
-before(async function () {
-  // Making sure all services are up in order
-  const timeOut = 50000
-  let bookUp = false
-  let libUp = false
-  this.timeout(timeOut)
-  const start = new Date()
-
-  while (true) {
-    try {
-      await basicBookQuery('{ books { title } }')
-      console.log('non-federated basic book service is up')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
-    }
-  }
-
-  while (true) {
-    try {
-      await bookQuery('{ books { title } }')
-      bookUp = true
-      console.log('book service is up')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
-    }
-  }
-
-  while (true) {
-    try {
-      const query = '{ books { title } }'
-      const authn = await signAuth(whitelistedClientId, 'testuser')
-      const headers: Record<string, string> = { Authorization: 'bearer ' + authn }
-      await digestBookQuery(query, {}, { headers })
-      console.log('non-federated basic book service is up')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
-    }
-  }
-
-  while (true) {
-    try {
-      await authzQuery('{ people { name } }')
-      console.log('non-federated authorization service is up')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
-    }
-  }
-
-  while (true) {
-    try {
-      await libraryQuery('{ libraries { id } }')
-      libUp = true
-      console.log('library service is up')
-      break
-    } catch {
-      if (new Date().getTime() - start.getTime() > timeOut) break
-      else await sleep(150)
-    }
-  }
-
-  while (true) {
-    if (libUp && bookUp) {
-      try {
-        await gatewayQuery('{ books { title } }')
-        console.log('gateway service is up')
-        break
-      } catch {
-        if (new Date().getTime() - start.getTime() > timeOut) break
-        else await sleep(150)
-      }
-    }
-  }
-})
-
-describe('basic tests', function () {
+describe('basic tests', () => {
   it('should be able to get a list of books with authors directly from the non-federated book service', async () => {
     const { books } = await basicBookQuery('{ books { title, authors { name } } }')
     expect(books.length).to.be.greaterThan(0)

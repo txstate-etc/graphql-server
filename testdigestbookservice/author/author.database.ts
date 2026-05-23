@@ -1,5 +1,5 @@
 import { isNotNull } from 'txstate-utils'
-import { type Author, type AuthorFilter } from './author.model'
+import type { Author, AuthorFilter } from './author.model.ts'
 
 export const authorDb = new Map<number, Author>()
 authorDb.set(1, {

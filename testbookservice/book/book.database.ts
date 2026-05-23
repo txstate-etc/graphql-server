@@ -1,5 +1,5 @@
 import { isNotNull } from 'txstate-utils'
-import { type Book, type BookFilter } from './book.model'
+import type { Book, BookFilter } from './book.model.ts'
 
 export const bookDb = new Map<number, Book>()
 const kingBooks = ['Misery', 'It', 'The Shining', 'Carrie', 'The Dead Zone']
