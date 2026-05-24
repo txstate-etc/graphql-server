@@ -92,12 +92,108 @@
       <span class="title">GraphQL Playground</span>
     </div>
   </div>
-  <script>window.addEventListener('load', function (event) {
+  <script>
+    (function () {
+      const endpointPath = new URL('GRAPHQL_ENDPOINT', location.href).pathname
+      const originalFetch = window.fetch.bind(window)
+      const TEMPORAL_CLAIMS = new Set(['exp', 'iat', 'nbf', 'jti'])
+
+      function requestPath (input) {
+        try {
+          if (typeof input === 'string') return new URL(input, location.href).pathname
+          if (input instanceof URL) return input.pathname
+          if (input && typeof input.url === 'string') return new URL(input.url, location.href).pathname
+        } catch (e) {}
+        return ''
+      }
+
+      function decodeJwt (value) {
+        if (!value) return null
+        const bearer = /^Bearer\s+(.+)$/i.exec(value)
+        const token = bearer ? bearer[1].trim() : value.trim()
+        const parts = token.split('.')
+        if (parts.length !== 3) return null
+        try {
+          const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+          const padded = b64 + '='.repeat((4 - b64.length % 4) % 4)
+          const json = decodeURIComponent(Array.prototype.map.call(atob(padded), function (c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+          }).join(''))
+          return JSON.parse(json)
+        } catch (e) { return null }
+      }
+
+      function isExpired (claims) {
+        return typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now()
+      }
+
+      function nonTemporalClaimsMatch (a, b) {
+        const keys = new Set(Object.keys(a).concat(Object.keys(b)))
+        for (const k of keys) {
+          if (TEMPORAL_CLAIMS.has(k)) continue
+          if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) return false
+        }
+        return true
+      }
+
+      function shouldReplace (existingHeader, freshClaims) {
+        if (!existingHeader) return true
+        const existingClaims = decodeJwt(existingHeader)
+        if (!existingClaims) return false
+        if (!isExpired(existingClaims)) return false
+        return nonTemporalClaimsMatch(existingClaims, freshClaims)
+      }
+
+      function fillTokenIntoActiveTab (token) {
+        const freshClaims = decodeJwt(token)
+        if (!freshClaims || isExpired(freshClaims)) return false
+        const raw = localStorage.getItem('graphql-playground')
+        if (!raw) return false
+        const state = JSON.parse(raw)
+        const workspaces = state && state.workspaces
+        if (!workspaces) return false
+        let updated = false
+        for (const wsKey of Object.keys(workspaces)) {
+          const sessions = workspaces[wsKey] && workspaces[wsKey].sessions
+          const map = sessions && sessions.sessions
+          const selectedId = sessions && (sessions.selectedSessionsId || sessions.selectedSessionId)
+          const session = map && selectedId && map[selectedId]
+          if (!session) continue
+          let headers = {}
+          if (session.headers) {
+            try { headers = JSON.parse(session.headers) } catch (e) { headers = {} }
+          }
+          const existing = headers.Authorization || headers.authorization
+          if (!shouldReplace(existing, freshClaims)) continue
+          delete headers.authorization
+          headers.Authorization = 'Bearer ' + token
+          session.headers = JSON.stringify(headers, null, 2)
+          updated = true
+        }
+        if (updated) localStorage.setItem('graphql-playground', JSON.stringify(state))
+        return updated
+      }
+
+      window.fetch = async function (input, init) {
+        const response = await originalFetch(input, init)
+        if (response.status !== 401) return response
+        if (requestPath(input) !== endpointPath) return response
+        const token = sessionStorage.getItem('token')
+        if (!token) return response
+        try {
+          if (fillTokenIntoActiveTab(token)) location.reload()
+        } catch (e) {}
+        return response
+      }
+    })()
+
+    window.addEventListener('load', function (event) {
       GraphQLPlayground.init(document.getElementById('root'), {
         endpoint: 'GRAPHQL_ENDPOINT',
         settings: GRAPHQL_SETTINGS
       })
-    })</script>
+    })
+  </script>
 </body>
 
 </html>
