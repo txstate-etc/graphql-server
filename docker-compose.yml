@@ -95,7 +95,7 @@ services:
   gateway:
     build:
       context: .
-      dockerfile: Dockerfile.apollo
+      dockerfile: Dockerfile.cosmo
     attach: false
     restart: on-failure:5
     depends_on:

@@ -1,0 +1,17 @@
+version: "1"
+listen_addr: "0.0.0.0:80"
+dev_mode: true
+graph:
+  token: ""
+execution_config:
+  file:
+    path: "/tmp/execution-config.json"
+graphql_path: "/graphql"
+telemetry:
+  metrics:
+    prometheus:
+      enabled: false
+    otlp:
+      enabled: false
+  tracing:
+    enabled: false

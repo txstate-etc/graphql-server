@@ -6,7 +6,6 @@
     "testauthzservice/**/*.ts",
     "testbookservice/**/*.ts",
     "testdigestbookservice/**/*.ts",
-    "testgatewayapollo/**/*.ts",
     "testlibraryservice/**/*.ts"
   ]
 }

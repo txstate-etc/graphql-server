@@ -1,0 +1,10 @@
+version: 1
+subgraphs:
+  - name: bookservice
+    routing_url: http://bookservice/graphql
+    schema:
+      file: /tmp/bookservice.graphql
+  - name: libraryservice
+    routing_url: http://libraryservice/graphql
+    schema:
+      file: /tmp/libraryservice.graphql

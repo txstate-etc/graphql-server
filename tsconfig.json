@@ -7,12 +7,17 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
+    "skipLibCheck": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
-    "skipLibCheck": true,
     "emitDecoratorMetadata": true,
     "useDefineForClassFields": false,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "declarationMap": true,
+    "sourceMap": true
   },
   "include": ["src"]
 }

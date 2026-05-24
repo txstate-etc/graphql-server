@@ -1,0 +1,14 @@
+FROM ghcr.io/wundergraph/cosmo/router:latest AS router
+
+FROM node:24-alpine
+WORKDIR /app
+
+RUN apk add --no-cache curl \
+  && npm install -g wgc@latest
+
+COPY --from=router /router /usr/local/bin/router
+
+COPY testgatewaycosmo/ ./
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]
