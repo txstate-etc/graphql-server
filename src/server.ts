@@ -5,11 +5,12 @@ import type { Multipart } from '@fastify/multipart'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import Server, { type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
 import { readFile } from 'node:fs/promises'
-import { execute, type GraphQLError, type GraphQLSchema, type DefinitionNode, type OperationDefinitionNode, Kind, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
+import { execute, type ExecutionResult, type GraphQLError, type GraphQLSchema, type DefinitionNode, type OperationDefinitionNode, Kind, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
 import pino from 'pino'
 import { Cache, toArray } from 'txstate-utils'
 import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
+import { ClientScope, type ClientScopeOptions, isIntrospectionOperation } from './clientscope.ts'
 import { composeQueryDigest, QueryDigest } from './querydigest.ts'
 import { Context, MockContext } from './context.ts'
 import { ExecutionError, ParseError, AuthError } from './errors.ts'
@@ -34,7 +35,7 @@ interface PlaygroundSettings {
   'schema.polling.interval'?: number
 }
 
-export interface GQLStartOpts<CustomContext extends typeof Context = typeof Context> extends BuildSchemaOptions {
+export interface GQLStartOpts<CustomContext extends typeof Context = typeof Context, ScopeData = unknown> extends BuildSchemaOptions, ClientScopeOptions<InstanceType<CustomContext>['auth'], ScopeData> {
   port?: number
   gqlEndpoint?: string | string[]
   playgroundEndpoint?: string | false
@@ -102,7 +103,7 @@ export class GQLServer extends Server {
     })
   }
 
-  public async start (options?: number | GQLStartOpts) {
+  public async start<ScopeData = unknown> (options?: number | GQLStartOpts<typeof Context, ScopeData>) {
     if (typeof options === 'number' || !options?.resolvers.length) throw new Error('Must start graphql server with some resolvers.')
     options.gqlEndpoint ??= '/graphql'
     options.gqlEndpoint = toArray(options.gqlEndpoint)
@@ -145,6 +146,8 @@ export class GQLServer extends Server {
     if (options.federated) {
       schema = buildFederationSchema(schema)
     }
+
+    const clientScope = new ClientScope<InstanceType<typeof ContextClass>['auth'], ScopeData>(schema, options)
     const validateRules = [...specifiedRules, ...(options.introspection && process.env.GRAPHQL_INTROSPECTION !== 'false' ? [] : [NoIntrospection])]
     const parsedQueryCache = new Cache(async (query: string) => {
       const parsedQuery = parse(query)
@@ -187,6 +190,11 @@ export class GQLServer extends Server {
         await ctx.prefetch()
         if (options.send403 && await options.send403(ctx)) {
           throw new HttpError(403, 'Not authorized to use this service.')
+        }
+        let scopeData = undefined as ScopeData
+        if (clientScope.enabled) {
+          scopeData = await clientScope.loadScopeData(ctx.auth?.clientId)
+          ctx.scopeData = scopeData
         }
 
         let body: GQLRequest['Body']
@@ -239,7 +247,16 @@ export class GQLServer extends Server {
         const operationName: string | undefined = body.operationName ?? parsedQuery.definitions.find((def: DefinitionNode): def is OperationDefinitionNode => def.kind === Kind.OPERATION_DEFINITION)?.name?.value
         req.log.info({ operationName, query, auth: ctx.authForLog() }, 'finished parsing query')
         const start = new Date()
-        const ret = await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: body.variables, operationName })
+        let ret: ExecutionResult
+        if (clientScope.enabled && isIntrospectionOperation(parsedQuery, operationName)) {
+          ret = await clientScope.runIntrospection({ query, parsedQuery, operationName, variables: body.variables, auth: ctx.auth, scopeData, ctx, clientId: ctx.auth?.clientId })
+        } else {
+          if (clientScope.enabled) {
+            const scopeError = clientScope.analyze(parsedQuery, operationName, body.variables, ctx.auth, scopeData)
+            if (scopeError) throw scopeError
+          }
+          ret = await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: body.variables, operationName })
+        }
         if (ret.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())

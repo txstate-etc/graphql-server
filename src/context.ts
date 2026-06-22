@@ -11,6 +11,13 @@ export type Type<T> = new (...args: any[]) => T
 
 export class MockContext<AuthType extends FastifyTxStateAuthInfo = FastifyTxStateAuthInfo> {
   public auth?: AuthType
+  /**
+   * The value resolved by `GQLStartOpts.loadScopeData` for this request, populated by the
+   * server before any resolver runs. Typed as `unknown` on `Context` itself — cast inside
+   * resolvers (`const scope = ctx.scopeData as MyScope`). The `GQLStartOpts` generic types
+   * `loadScopeData` and `fieldIsInScope` consistently against your scope shape.
+   */
+  public scopeData?: unknown
   protected serviceInstances: Map<any, any>
   public loaders: DataLoaderFactory<this>
   private static executeQuery: (ctx: MockContext, query: string, variables: any, operationName?: string) => Promise<any>

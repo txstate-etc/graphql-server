@@ -33,6 +33,9 @@ server.start({
 * `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
 * `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `clientId` service and query string.
 * `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
+* `fieldIsInScope?: (params) => boolean | string` - Limit a client application to a subset of the schema at runtime *and* in introspection. See "Client Scope Enforcement" below.
+* `typeIsInScope?: (params) => boolean | string` - Block an entire type regardless of which field a client used to reach it. See "Client Scope Enforcement" below.
+* `loadScopeData?: (clientId) => Promise<unknown>` - Load the scope data `fieldIsInScope` / `typeIsInScope` depend on (e.g. the client's allowed-field set from a database). Cached automatically by `clientId`. Result is also placed on `ctx.scopeData`. See "Client Scope Enforcement" below.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
@@ -183,14 +186,15 @@ As documented above, the `send401` option can be set to make sure your entire AP
 Your clients will be able to detect an authentication problem by checking whether `errors[0].authenticationError` in the response data is `true`. They may need to redirect their user to a login screen.
 
 ## Authorization
-Generally speaking, there are two kinds of authorization:
-* User-based
+There are two distinct concepts that are often both referred to as "authorization":
+* User-based authorization
   * Access to data and mutations based on who the authenticated user is and their role in the application.
   * Will depend on complicated business logic (see the `mayView` example above where access to a person is authorized based on them being registered for a course you teach.)
-* Application-based
-  * Access to data and mutations based on the application for which the access token was generated.
-  * Usually simply limits the types of data allowed, like saying that a course catalog application can only see semesters and course details, but no user information.
-  * Can be implemented with a TypeGraphQL middleware. This library doesn't provide anything extra.
+* Application-based client scoping
+  * Access to data and mutations based on the application (client) for which the access token was generated.
+  * Usually simply limits the types of data allowed, like a course catalog application can only see semesters and course details, but no user information.
+
+This section is about user-based authorization. For client scoping, see the next section "Client Scope Enforcement".
 
 This library provides a completely opt-in `AuthorizedService` abstract class that you can use instead of `BaseService`.
 
@@ -214,6 +218,84 @@ export class BookService extends AuthzdService {
 }
 ```
 This is also a great way to add more authorization-related helper methods like `fetchCurrentUser` or `isLibraryOwner` for use in multiple services.
+## Client Scope Enforcement
+When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — provide either or both of `fieldIsInScope` or `typeIsInScope`.
+
+`fieldIsInScope` and `typeIsInScope` run in two places:
+- **At runtime**, once per resolver. Denying a type or field aborts the request with HTTP 400.
+- **During introspection**, to build a filtered schema so the client only sees their slice when they call `__schema` / `__type`.
+
+These functions run many times per request; they need to be synchronous and fast. Any async data they need should be loaded in `loadScopeData`. Return Sets and Maps so that you don't have to loop.
+
+```typescript
+import { GQLServer } from '@txstate-mws/graphql-server'
+
+const server = new GQLServer({ authenticate })
+await server.start({
+  resolvers: [...],
+  loadScopeData: async (clientId) => {
+    return await db.getScopeForClient(clientId)
+  },
+  fieldIsInScope: ({ typeName, fieldName, scopeData }) => {
+    const scope = scopeData as { allowed: Set<string> } | undefined
+    return scope?.allowed.has(`${typeName}.${fieldName}`) ?? false
+  }
+})
+```
+
+### Return values
+- `true` — allow this field
+- `false` — deny with the default message
+- a `string` — deny with that string appended to the 400 error (e.g. `"this endpoint is reserved for the partner tier"`)
+
+For `isIntrospection: true` calls, any non-`true` return hides the field from the introspection result; the reason string is ignored.
+
+### Blocking a whole type
+`fieldIsInScope` is good for blocking out fields, but if you want to block out a whole type, like `Person`, you'd have to cover a lot of fields, like `Query.people`, `Library.members`, `Book.author`, etc. Use `typeIsInScope` instead. Root types (`Query`, `Mutation`, `Subscription`) are always in scope - they won't be sent to you so you don't need to worry about them.
+
+```typescript
+await server.start<MyScope>({
+  resolvers: [...],
+  loadScopeData: async (clientId) => ({
+    bannedTypes: new Set(['Person', 'Address'])
+  }),
+  typeIsInScope: ({ typeName, scopeData }) => {
+    return !scopeData.bannedTypes.has(typeName)
+  }
+})
+```
+
+Same return shape as `fieldIsInScope`: `true` to allow, `false` for the default 400, or a `string` for a custom reason. A request must pass all `fieldIsInScope` and `typeIsInScope` checks in order to proceed.
+
+### What this model can and cannot express
+The check is field-level, keyed on `typeName` + `fieldName`. That means:
+
+- **OK**: ban `Query.people` but allow `Book.author` and `Person.name`, so a client can read an author's name reached via a book but cannot enumerate people directly.
+- **OK**: argument-conditional rules — `fieldIsInScope` receives the resolved `args`, so you can permit `Query.people` only when the caller passes the authenticated user's id, or force them to use pagination.
+- **Not expressible**: path-conditional rules — `Person.name` reached via `Book.author` allowed but not via `Book.contributors`. If `Person.name` is whitelisted it is whitelisted everywhere; ban `Book.contributors` instead.
+
+Watch out for **indirect enumeration**: banning `Query.people` does nothing if any other allowed field returns `[Person]`. Audit all entry points to a type, not just the obvious one.
+
+### Caching
+Two caches are built in. You don't need to configure either:
+
+- **Scope data** — `loadScopeData` is wrapped in a `Cache` keyed by `clientId` with a 30-second fresh window (60s stale), so the database round-trip runs at most twice per minute per client. Requests without a `clientId` are cached under a single anonymous key.
+- **Filtered introspection response** — the full filtered schema + executed introspection result is cached using the txstate-utils `Cache` defaults (5 minutes fresh / 10 minutes stale), keyed by `clientId` + query + variables.
+
+### scopeData on the context
+Whatever `loadScopeData` returns is also assigned to `ctx.scopeData`, so resolvers can read it without a second fetch.
+
+Most of the time you won't need it — by the time a resolver runs, `fieldIsInScope` has already confirmed every field in the query is allowed. Reach for `ctx.scopeData` when the right answer for a lower-tier client is to *modify* the response rather than reject the field outright: anonymizing PII, redacting sub-fields, writing to a different table on mutation, etc.
+
+```typescript
+@FieldResolver(returns => String)
+async name (@Ctx() ctx: Context, @Root() person: Person) {
+  const scope = ctx.scopeData as MyScope
+  // Person.name was allowed by fieldIsInScope, but this client only sees anonymized names.
+  return scope.anonymizeNames ? '<redacted>' : person.name
+}
+```
+
 ## Timing
 Earlier I mentioned `ctx.timing(...messages: string[])`. This is just a quick convenience method to help you track the passage of time for an individual request. You can use it to replace `console.log` statments, and each time it will print the amount of time elapsed since the last statement. Makes it easier to investigate where your bottlenecks are.
 

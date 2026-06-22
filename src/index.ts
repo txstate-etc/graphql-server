@@ -1,4 +1,5 @@
 import 'reflect-metadata'
+export * from './clientscope.ts'
 export * from './context.ts'
 export * from './errors.ts'
 export * from './federation.ts'

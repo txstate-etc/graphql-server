@@ -174,3 +174,11 @@ export class AuthError extends HttpError {
     super(401)
   }
 }
+export class ScopeError extends HttpError {
+  constructor (public readonly typeName: string, public readonly fieldName: string | undefined, public readonly reason?: string) {
+    const target = fieldName != null ? `Field "${typeName}.${fieldName}"` : `Type "${typeName}"`
+    super(400, reason != null
+      ? `${target} is not within the scope granted to this client: ${reason}`
+      : `${target} is not within the scope granted to this client.`)
+  }
+}
