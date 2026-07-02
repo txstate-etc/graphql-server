@@ -5,7 +5,7 @@ import type { FastifyTxStateAuthInfo } from 'fastify-txstate'
 import { omit, sleep } from 'txstate-utils'
 import { AuthError } from './errors.js'
 import { PaginationResponse, CursorResponse, SortDirection } from './pagination.js'
-import type { ListOptions, CursorListOptions, SortEntry } from './pagination.js'
+import type { Pagination, CursorPagination, SortEntry } from './pagination.js'
 import type { BaseService } from './service.js'
 import type { UploadFiles } from './models.js'
 
@@ -127,7 +127,7 @@ export class MockContext<AuthType extends FastifyTxStateAuthInfo = FastifyTxStat
   /**
    * A lighter-weight alternative to the nodes/edges connection pattern, for paginating a top-level
    * Query field by **page number**. It builds a `PaginationResponse` (`pageInfo`) from the requested
-   * `ListOptions` and hands it to your `work` callback, which runs the query and populates
+   * `Pagination` and hands it to your `work` callback, which runs the query and populates
    * `pageInfo.finalPage` (and optionally `pageInfo.sortOrder`) as a side effect before returning the
    * page of results.
    *
@@ -146,7 +146,7 @@ export class MockContext<AuthType extends FastifyTxStateAuthInfo = FastifyTxStat
    *                   reads it to build the query and the same value is echoed back to the client.
    * @param work       Runs the query; receives the `pageInfo` to populate and returns the results.
    */
-  async executePaginated <T> (queryType: string, opts: { pagination?: ListOptions, sort?: SortEntry[], defaultSort?: SortEntry[], defaultPageSize?: number }, work: (pageInfo: PaginationResponse) => Promise<T> | T) {
+  async executePaginated <T> (queryType: string, opts: { pagination?: Pagination, sort?: SortEntry[], defaultSort?: SortEntry[], defaultPageSize?: number }, work: (pageInfo: PaginationResponse) => Promise<T> | T) {
     const { pagination, sort, defaultSort, defaultPageSize } = opts
     const paginationRequested = pagination?.page != null || pagination?.perPage != null
     const pageInfo = new PaginationResponse({ page: pagination?.page, perPage: pagination?.perPage, sortOrder: resolveSortOrder(sort, defaultSort), defaultPageSize })
@@ -168,7 +168,7 @@ export class MockContext<AuthType extends FastifyTxStateAuthInfo = FastifyTxStat
    *                   reads it to build the query and the same value is echoed back to the client.
    * @param work       Runs the query; receives the `pageInfo` to populate and returns the results.
    */
-  async executeCursorPaginated <T> (queryType: string, opts: { pagination?: CursorListOptions, sort?: SortEntry[], defaultSort?: SortEntry[], defaultPageSize?: number }, work: (pageInfo: CursorResponse) => Promise<T> | T) {
+  async executeCursorPaginated <T> (queryType: string, opts: { pagination?: CursorPagination, sort?: SortEntry[], defaultSort?: SortEntry[], defaultPageSize?: number }, work: (pageInfo: CursorResponse) => Promise<T> | T) {
     const { pagination, sort, defaultSort, defaultPageSize } = opts
     const paginationRequested = pagination?.after != null || pagination?.perPage != null
     const pageInfo = new CursorResponse({ perPage: pagination?.perPage, after: pagination?.after, sortOrder: resolveSortOrder(sort, defaultSort), defaultPageSize })

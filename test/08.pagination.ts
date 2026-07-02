@@ -3,7 +3,7 @@ import axios from 'axios'
 import { expect } from 'chai'
 import { basicBookQuery } from './01.basic.ts'
 
-const pagedQuery = 'query ($pagination: ListOptions) { pagedBooks (pagination: $pagination) { id } pageInfo { pagedBooks { page perPage finalPage } } }'
+const pagedQuery = 'query ($pagination: Pagination) { pagedBooks (pagination: $pagination) { id } pageInfo { pagedBooks { page perPage finalPage } } }'
 
 describe('pagination', () => {
   it('should return every result on a single page when no pagination argument is given', async () => {
@@ -49,7 +49,7 @@ describe('pagination', () => {
   })
 
   it('should return pageInfo even when it is selected before the paginated field', async () => {
-    const reversedQuery = 'query ($pagination: ListOptions) { pageInfo { pagedBooks { page perPage finalPage } } pagedBooks (pagination: $pagination) { id } }'
+    const reversedQuery = 'query ($pagination: Pagination) { pageInfo { pagedBooks { page perPage finalPage } } pagedBooks (pagination: $pagination) { id } }'
     const { pagedBooks, pageInfo } = await basicBookQuery(reversedQuery, { pagination: { page: 1, perPage: 5 } })
     expect(pagedBooks.length).to.equal(5)
     expect(pageInfo.pagedBooks.perPage).to.equal(5)
@@ -62,7 +62,7 @@ describe('pagination', () => {
 
   it('should report the paginated invocation in pageInfo when the same query is aliased both unpaginated and paginated', async () => {
     // unpaginated alias listed first so it registers first; the paginated one must still win
-    const mixedQuery = 'query ($p: ListOptions) { a: pagedBooks { id } b: pagedBooks (pagination: $p) { id } pageInfo { pagedBooks { page perPage finalPage } } }'
+    const mixedQuery = 'query ($p: Pagination) { a: pagedBooks { id } b: pagedBooks (pagination: $p) { id } pageInfo { pagedBooks { page perPage finalPage } } }'
     const { a, b, pageInfo } = await basicBookQuery(mixedQuery, { p: { page: 2, perPage: 5 } })
     expect(a.length).to.be.greaterThan(5)
     expect(b.length).to.equal(5)
@@ -82,7 +82,7 @@ describe('pagination', () => {
   it('should only report one error when a paginated query fails, resolving its pageInfo to null', async () => {
     // hit the endpoint directly since the shared helper hides the errors array
     const resp = await axios.post('http://basicbookservice/graphql', {
-      query: 'query ($f: BookFilter, $p: ListOptions) { pagedBooks (filter: $f, pagination: $p) { id } pageInfo { pagedBooks { finalPage } } }',
+      query: 'query ($f: BookFilter, $p: Pagination) { pagedBooks (filter: $f, pagination: $p) { id } pageInfo { pagedBooks { finalPage } } }',
       variables: { f: { search: 'throw!' }, p: { page: 1, perPage: 5 } }
     })
     expect(resp.data.errors.length).to.equal(1)
@@ -92,7 +92,7 @@ describe('pagination', () => {
     // booksViaSubquery runs pagedBooks (page 1, perPage 3) through a nested ctx.query() while the
     // outer operation also runs pagedBooks paginated; without isolation the nested run would trip
     // the duplicate-request guard and the outer pageInfo could reflect the wrong invocation
-    const q = 'query ($p: ListOptions) { pagedBooks (pagination: $p) { id } booksViaSubquery { id } pageInfo { pagedBooks { page perPage } } }'
+    const q = 'query ($p: Pagination) { pagedBooks (pagination: $p) { id } booksViaSubquery { id } pageInfo { pagedBooks { page perPage } } }'
     const { pagedBooks, booksViaSubquery, pageInfo } = await basicBookQuery(q, { p: { page: 2, perPage: 5 } })
     expect(pagedBooks.length).to.equal(5)
     expect(booksViaSubquery.length).to.equal(3)
@@ -102,7 +102,7 @@ describe('pagination', () => {
 
   it('should error when the same paginated query is requested twice in one operation', async () => {
     try {
-      await basicBookQuery('query ($p: ListOptions) { a: pagedBooks (pagination: $p) { id } b: pagedBooks (pagination: $p) { id } }', { p: { page: 1, perPage: 5 } })
+      await basicBookQuery('query ($p: Pagination) { a: pagedBooks (pagination: $p) { id } b: pagedBooks (pagination: $p) { id } }', { p: { page: 1, perPage: 5 } })
       expect.fail('should have thrown because the same paginated query was requested twice')
     } catch (e: any) {
       expect(e.message).to.contain('more than one paginated request')
@@ -110,7 +110,7 @@ describe('pagination', () => {
   })
 
   it('should apply the requested sort and echo it back in pageInfo', async () => {
-    const sortedQuery = 'query ($pagination: ListOptions, $sort: [SortEntryInput!]) { pagedBooks (pagination: $pagination, sort: $sort) { title } pageInfo { pagedBooks { sortOrder { field direction } } } }'
+    const sortedQuery = 'query ($pagination: Pagination, $sort: [SortEntryInput!]) { pagedBooks (pagination: $pagination, sort: $sort) { title } pageInfo { pagedBooks { sortOrder { field direction } } } }'
     const { pagedBooks, pageInfo } = await basicBookQuery(sortedQuery, { pagination: { page: 1, perPage: 100 }, sort: [{ field: 'title', direction: 'ASC' }] })
     const titles = pagedBooks.map((b: any) => b.title)
     expect(titles).to.deep.equal([...titles].sort((a: string, b: string) => a.localeCompare(b)))
@@ -118,7 +118,7 @@ describe('pagination', () => {
   })
 
   it('should default direction to ASC when omitted and echo the default back in pageInfo', async () => {
-    const sortedQuery = 'query ($pagination: ListOptions, $sort: [SortEntryInput!]) { pagedBooks (pagination: $pagination, sort: $sort) { title } pageInfo { pagedBooks { sortOrder { field direction } } } }'
+    const sortedQuery = 'query ($pagination: Pagination, $sort: [SortEntryInput!]) { pagedBooks (pagination: $pagination, sort: $sort) { title } pageInfo { pagedBooks { sortOrder { field direction } } } }'
     const { pagedBooks, pageInfo } = await basicBookQuery(sortedQuery, { pagination: { page: 1, perPage: 100 }, sort: [{ field: 'title' }] })
     const titles = pagedBooks.map((b: any) => b.title)
     expect(titles).to.deep.equal([...titles].sort((a: string, b: string) => a.localeCompare(b)))
@@ -126,7 +126,7 @@ describe('pagination', () => {
   })
 })
 
-const cursorQuery = 'query ($pagination: CursorListOptions) { cursorBooks (pagination: $pagination) { id } pageInfo { cursorBooks { hasNextPage endCursor } } }'
+const cursorQuery = 'query ($pagination: CursorPagination) { cursorBooks (pagination: $pagination) { id } pageInfo { cursorBooks { hasNextPage endCursor } } }'
 
 describe('cursor pagination', () => {
   it('should return a page and a cursor that fetches the following, non-overlapping page', async () => {
@@ -142,7 +142,7 @@ describe('cursor pagination', () => {
   })
 
   it('should apply the requested sort to cursor pages and echo the effective sort back', async () => {
-    const sortedCursorQuery = 'query ($pagination: CursorListOptions, $sort: [SortEntryInput!]) { cursorBooks (pagination: $pagination, sort: $sort) { title } pageInfo { cursorBooks { endCursor sortOrder { field direction } } } }'
+    const sortedCursorQuery = 'query ($pagination: CursorPagination, $sort: [SortEntryInput!]) { cursorBooks (pagination: $pagination, sort: $sort) { title } pageInfo { cursorBooks { endCursor sortOrder { field direction } } } }'
     const { cursorBooks: page1, pageInfo: info1 } = await basicBookQuery(sortedCursorQuery, { pagination: { perPage: 5 }, sort: [{ field: 'title' }] })
     expect(info1.cursorBooks.sortOrder).to.deep.equal([{ field: 'title', direction: 'ASC' }])
     const { cursorBooks: page2 } = await basicBookQuery(sortedCursorQuery, { pagination: { perPage: 5, after: info1.cursorBooks.endCursor }, sort: [{ field: 'title' }] })

@@ -268,7 +268,7 @@ This is also a great way to add more authorization-related helper methods like `
 A paginated query returns one page of results as a plain array, while a sibling `pageInfo` query in the same operation reports the page metadata (total page count, current cursor, etc.). The client asks for both at once:
 
 ```graphql
-query Books ($pagination: ListOptions) {
+query Books ($pagination: Pagination) {
   books (pagination: $pagination) { id title }
   pageInfo {
     books { page perPage finalPage }
@@ -280,15 +280,15 @@ Results stay a flat list — no Relay-style edges/nodes wrapping. The tradeoff i
 
 Here's how to build one.
 
-**1. Accept a `ListOptions` argument and wrap the work in `ctx.executePaginated`.** The first argument is a stable key naming the query (`'books'`) — it ties this resolver to the `pageInfo` field in step 3. Your callback receives a `PaginationResponse` to populate and runs the query:
+**1. Accept a `Pagination` argument and wrap the work in `ctx.executePaginated`.** The first argument is a stable key naming the query (`'books'`) — it ties this resolver to the `pageInfo` field in step 3. Your callback receives a `PaginationResponse` to populate and runs the query:
 
 ```typescript
-import { Context, ListOptions } from '@txstate-mws/graphql-server'
+import { Context, Pagination } from '@txstate-mws/graphql-server'
 
 @Resolver(of => Book)
 export class BookResolver {
   @Query(returns => [Book])
-  async books (@Ctx() ctx: Context, @Arg('pagination', type => ListOptions, { nullable: true }) pagination?: ListOptions) {
+  async books (@Ctx() ctx: Context, @Arg('pagination', type => Pagination, { nullable: true }) pagination?: Pagination) {
     return await ctx.executePaginated<Book[]>('books', { pagination }, async pageInfo => {
       return await ctx.svc(BookService).find(pageInfo)
     })
@@ -336,12 +336,12 @@ A few behaviors worth knowing: if a client omits `pagination` entirely (or sends
 Sorting is a **separate, independent argument** from pagination — accept a `sort: [SortEntryInput!]` arg (a list of `{ field, direction }`) and pass it alongside `pagination` to `executePaginated`. Keeping them separate means a service can implement paging and sorting on its own schedule: add one arg now and the other later, with no breaking change.
 
 ```typescript
-import { Context, ListOptions, SortEntry } from '@txstate-mws/graphql-server'
+import { Context, Pagination, SortEntry } from '@txstate-mws/graphql-server'
 
 @Query(returns => [Book])
 async books (
   @Ctx() ctx: Context,
-  @Arg('pagination', type => ListOptions, { nullable: true }) pagination?: ListOptions,
+  @Arg('pagination', type => Pagination, { nullable: true }) pagination?: Pagination,
   @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]
 ) {
   return await ctx.executePaginated<Book[]>('books', { pagination, sort }, async pageInfo => {
@@ -375,13 +375,13 @@ await ctx.executePaginated<Book[]>('books', { pagination, sort }, async pageInfo
 
 ### Cursor pagination
 
-For forward-only paging, swap in `CursorListOptions` (`perPage` + `after`) and `ctx.executeCursorPaginated`. The structure is identical to above; your service writes `hasNextPage` and `endCursor` onto the `CursorResponse` instead of `finalPage`, and the client passes a page's `endCursor` back as `after` to fetch the next one:
+For forward-only paging, swap in `CursorPagination` (`perPage` + `after`) and `ctx.executeCursorPaginated`. The structure is identical to above; your service writes `hasNextPage` and `endCursor` onto the `CursorResponse` instead of `finalPage`, and the client passes a page's `endCursor` back as `after` to fetch the next one:
 
 ```typescript
-import { Context, CursorListOptions, CursorResponse } from '@txstate-mws/graphql-server'
+import { Context, CursorPagination, CursorResponse } from '@txstate-mws/graphql-server'
 
 @Query(returns => [Book])
-async cursorBooks (@Ctx() ctx: Context, @Arg('pagination', type => CursorListOptions, { nullable: true }) pagination?: CursorListOptions, @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]) {
+async cursorBooks (@Ctx() ctx: Context, @Arg('pagination', type => CursorPagination, { nullable: true }) pagination?: CursorPagination, @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]) {
   return await ctx.executeCursorPaginated<Book[]>('cursorBooks', { pagination, sort }, async pageInfo => {
     // pageInfo.after / pageInfo.perPage come from the request; set pageInfo.endCursor / pageInfo.hasNextPage
     return await ctx.svc(BookService).findByCursor(pageInfo)

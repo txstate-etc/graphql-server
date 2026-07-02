@@ -43,7 +43,7 @@ export class SortedResponse {
 }
 
 @InputType()
-export class ListOptions {
+export class Pagination {
   @Field(type => Int, { nullable: true, description: 'Page number for pagination.' })
   page?: number
 
@@ -73,7 +73,7 @@ export class PaginationResponse extends SortedResponse {
 }
 
 @InputType()
-export class CursorListOptions {
+export class CursorPagination {
   @Field(type => Int, { nullable: true, description: 'Number of results per page.' })
   perPage?: number
 
