@@ -9,10 +9,11 @@ import { execute, type ExecutionResult, type GraphQLError, type GraphQLSchema, t
 import { LRUCache } from 'lru-cache'
 import pino from 'pino'
 import { Cache, toArray } from 'txstate-utils'
-import { buildSchema, type BuildSchemaOptions } from 'type-graphql'
+import { buildSchema, type BuildSchemaOptions, getMetadataStorage } from 'type-graphql'
 import { ClientScope, type ClientScopeOptions, isIntrospectionOperation } from './clientscope.ts'
 import { composeQueryDigest, QueryDigest } from './querydigest.ts'
 import { Context, MockContext } from './context.ts'
+import { PageInformation, PageInformationResolver } from './pagination.ts'
 import { ExecutionError, ParseError, AuthError } from './errors.ts'
 import { buildFederationSchema } from './federation.ts'
 import { NoIntrospection, shasum } from './util.ts'
@@ -139,8 +140,24 @@ export class GQLServer extends Server {
       })
     }
 
+    // If the app registered any resolver targeting PageInformation (i.e. it opted into the
+    // lightweight pagination pattern with `ctx.executePaginated`), automatically register the
+    // generic `pageInfo` query so the app doesn't have to wire up our internal resolver by hand.
+    // We only do this when a registered resolver actually targets PageInformation, because the
+    // type is field-less on its own and would break schema build for apps that don't use it.
+    let resolvers = options.resolvers
+    if (resolvers.every(r => typeof r === 'function') && !resolvers.includes(PageInformationResolver)) {
+      const pageInfoTargets = new Set(
+        getMetadataStorage().resolverClasses
+          .filter(rc => { try { return rc.getObjectType() === PageInformation } catch { return false } })
+          .map(rc => rc.target)
+      )
+      if (resolvers.some(r => pageInfoTargets.has(r))) resolvers = [...resolvers, PageInformationResolver]
+    }
+
     let schema = lexicographicSortSchema(await buildSchema({
       ...options,
+      resolvers,
       validate: false
     }))
     if (options.federated) {

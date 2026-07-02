@@ -30,7 +30,7 @@ server.start({
 * `customContext?: Type<CustomContext>` (default `Context`) - provide a custom context class for more request-scoped state or different authentication code (more info later).
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
 * `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system (emits Apollo Federation v2 subgraph SDL). See "Federation" below for more info.
-* `after?: (queryTime: number, operationName: string, query: string, variables: any) => Promise<void>` - A function to run after a successful query. Useful for logging query execution time for later analysis. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries.
+* `after?: (queryTime, operationName, query, auth, variables, data, errors, ctx) => void | Promise<void>` - A function to run after each query/mutation completes. Useful for logging query execution time, recording an audit trail of mutations, etc. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries. See "The `after` hook" below for the full signature and an example.
 * `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `clientId` service and query string.
 * `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
 * `fieldIsInScope?: (params) => boolean | string` - Limit a client application to a subset of the schema at runtime *and* in introspection. See "Client Scope Enforcement" below.
@@ -75,23 +75,42 @@ If `send401` is set and the request is unauthenticated, `prefetch` is skipped (t
 > The legacy `waitForAuth()` hook is still called by the default `prefetch()` for backwards compatibility, but is deprecated. New code should override `prefetch()`.
 
 ## Services
-We mentioned services in the previous section, but we haven't talked about what those are yet. Keeping your project organized is important, and one key way to do that is to split responsibilities. First you have `typegraphql` resolvers that are as thin as possible while fully specifying your GraphQL schema. The resolvers make calls to service classes that implement your business logic, authorization, caching, dataloading, and database interactions. I usually like to split things a little further so that database-specific SQL is in yet another layer, but we won't cover that in this README as it's not necessary for `graphql-server`.
+We mentioned services in the previous sections, but we haven't talked about what those are yet. Keeping your project organized is important, and one key way to do that is to split responsibilities. First you have `typegraphql` resolvers that should be as thin as possible - only specifying your GraphQL schema and making a call to a _service_ class that does all the business logic, authorization, caching, dataloading, and database interactions. This way you can theoretically mix graphql, RESTful, gRPC, or whatever you want, without duplicating important logic.
 
-To help you organize services this way, this library provides a `BaseService` abstract class. The most important thing it provides is the `Context` object we discussed earlier. Anything extending `BaseService` will have a `this.ctx` property for easy access to the context without having to constantly pass it from your resolvers.
+```typescript
+@Resolver(of => Book)
+export class BookResolver {
+  @Query(returns => [Book])
+  async books (@Ctx() ctx: Context, @Arg('filter') filter: BookFilters): Promise<Book[]> {
+    return await ctx.svc(BookService).find(filter)
+  }
+
+  @FieldResolver(returns => Person)
+  async author (@Ctx() ctx: Context, @Root() book: Book) {
+    return await ctx.svc(PersonService).findById(book.authorId)
+  }
+}
+```
+
+To help you organize this way, this library provides a `BaseService` abstract class. The most important thing it provides is the `Context` object we discussed earlier. Anything extending `BaseService` will have a `this.ctx` property for easy access to the context without having to constantly pass it from your resolvers. And as mentioned above, `Context` is able to efficiently construct services once per request with `ctx.svc(MyServiceClass)`.
 
 ```typescript
 const bookLoader = new PrimaryKeyLoader({
+  // `getBooks` is in a .database.ts file and covers the SQL work
   fetch: (ids: string[]) => await getBooks(ids)
 })
 
 class BookService extends BaseService {
+  async find (filters: BookFilters) {
+    return await getBooks(filters)
+  }
   async findById (id: string) {
     return await this.loaders.get(bookLoader).load(id)
   }
 }
 ```
 
-You might notice above that I used `this.loaders` instead of `this.ctx.loaders`, totally contradicting what I stated above. Well, for convenience, `BaseService` passes applicable methods through to its context, to save you a little bit of typing:
+You might notice that I used `this.loaders` instead of `this.ctx.loaders`. For convenience, `BaseService` passes applicable methods through to its context, to save you a little bit of typing:
 
 * `this.svc` for access to other models' services, a tiny bit easier than `this.ctx.svc`
 * `this.loaders` for your dataloader-factory instance, a tiny bit easier than `this.ctx.loaders`
@@ -101,13 +120,6 @@ You might notice above that I used `this.loaders` instead of `this.ctx.loaders`,
 
 So when you need access to data, no matter whether you are in a resolver or another model's service, you can obtain the service of your choice from the context.
 
-### Example inside a resolver:
-```typescript
-@Query(returns => [User])
-async users (@Ctx() ctx: Context, @Arg('filter') filter: UserFilters): Promise<User[]> {
-  return await ctx.svc(UserService).find(filter)
-}
-```
 ### Example getting a different service inside a service
 ```typescript
 // returns true if the authenticated user should be able to see the passed user
@@ -121,6 +133,80 @@ async mayView (user: User) {
   return sections.some(s => s.instructorId === this.auth.userid)
 }
 ```
+
+## Validation Errors
+Error handling in GraphQL can get a little complicated since there are so many different ways to return errors. You can return an HTTP status code, but it's not very GraphQL-like because GraphQL is supposed to be transport-agnostic. So usually you return an `errors` array with a 200 response, and each error can have an extensions property with all kinds of extra metadata. That's also not very GraphQL-like because the extensions property doesn't have a self-documented typesafe spec.
+
+What this library encourages is to split your errors into unexpected system errors and expected validation errors. Unexpected errors happen when the infrastructure is offline or a developer has made a mistake (either an API developer or a UI developer). Those errors get thrown and end up in the `errors` array.
+
+Expected errors happen when a user makes a mistake, like specifying a date outside the allowed range. These errors should not be in the `errors` array at all. Instead, we should allow for the possibility of an error in the response.
+
+This library provides a `ValidatedResponse` type for this purpose. A `ValidatedResponse` has a `success` property to indicate whether the mutation took place or was rejected without altering any state. It also has a `messages` property with messages to be presented to the user. Each message has a type: `error`, `warning`, or `success`, and an `arg` identifying the mutation argument that caused the message. `arg` may be dot-separated or in bracket notation when one of the arguments is an object and the error is deep inside it.
+
+Note that there can be messages even when `success` is `true`. Messages with type `success` are to let the user know that they did something well; for example, the password they've entered is strong. Messages with type `warning` warn the user about something, but allow the mutation to complete anyway.
+
+The `arg` should always identify the GraphQL argument that caused the error. For instance, `createUser(username: 'Hamburger')` might reply with a message that looks like `{ message: 'That is not a name for humans!', type: 'error', arg: 'username' }`.
+
+To use a `ValidatedResponse`, simply create and return one during the course of servicing a mutation. Note that you often want to collect validation errors instead of returning immediately, so that you can communicate to users about all the things that went wrong all at once instead of hitting them with a new one each time they fix something. You can use the `hasErrors` method to determine whether one or more errors occurred.
+```typescript
+class UserService extends BaseService {
+  async registerForClass (section: Section) {
+    if (!await userAllowedToRegister(this.auth.username, section)) {
+      return ValidatedResponse.error('This user cannot register for this course.')
+    }
+    const response = new ValidatedResponse()
+    if (!await sectionHasAvailability(section)) {
+      response.addMessage('This course is full.', 'section', 'error')
+    }
+    if (!await sectionHasAnInstructor(section)) {
+      response.addMessage('This course has no instructor yet.', 'section', 'error')
+    }
+
+    if (!response.hasErrors()) {
+      await registerUserForSection(ctx.auth.username, section)
+      response.success = true
+    }
+    return response
+  }
+}
+```
+### Extending ValidatedResponse
+GraphQL mutations are encouraged to return an object, usually the object which was just mutated. To do
+this, you would need to extend the `ValidatedResponse` to add your return object.
+```typescript
+@ObjectType()
+export class BookValidatedResponse extends ValidatedResponse {
+  @Field(type => Book)
+  book: Book
+
+  constructor (args: ValidatedResponseArgs & { book: Book }) {
+    super(args)
+    this.book = args.book
+  }
+}
+```
+### Convienence Assertions
+`ValidatedResponse` also has several convenience methods to help you quickly make assertions, and any that fail will set `success` to `false` and add an appropriate message against the correct `arg`.
+```typescript
+  async createObject(args: CreateObjectArguments) {
+    const response = new ValidatedResponse()
+    response.assertLength(args, 'friend.username', 8, 12)
+    if (!response.hasErrors()) {
+      await addObjectToDatabase(args)
+      response.success = true
+    }
+    return response
+  }
+```
+The convenience methods are:
+* `response.assert (condition: boolean, message: string, arg?: string)`
+* `response.assertBetween (input: any, arg: string, min: number, max: number)`
+  * error message will be `Value out of range, must be between ${min} and ${max}`
+* `assertPositive (input: any, arg: string)`
+  * error message will be `Value must not be negative`
+* `assertLength (input: any, arg: string, min: number, max: number)`
+  * error message for strings `Character maximum exceeded.` or `Character minimum not met.`
+  * error message for arrays `Too many entries.` or `Not enough entries.`
 
 ## Authentication
 Authentication is delegated to [fastify-txstate](https://github.com/txstate-etc/fastify-txstate). You provide an `authenticate` function when constructing `GQLServer`; fastify-txstate runs it on each request, attaches the result to `req.auth`, and the library reads it into `ctx.auth`. If authentication is not included in the request or `authenticate` returns `undefined`, `ctx.auth` will be `undefined`.
@@ -143,47 +229,6 @@ const server = new GQLServer({ authenticate })
 The shape of the object you return is whatever your consumer expects on `ctx.auth`. The default `Context<AuthType>` constrains `AuthType` to extend `FastifyTxStateAuthInfo`, so common fields like `username`, `clientId`, and `token` are available without extra typing. Pass a wider type as a generic if you need additional fields (see "Typescript Note" under Authorization below).
 
 This library does NOT read `JWT_SECRET` or `JWT_SECRET_VERIFY` itself — JWT verification, key sourcing, and token shape are entirely up to your `authenticate` implementation. If you want OIDC-style discovery, fastify-txstate's `authenticateAll` helper is one option; for symmetric HS256 the test suite's [testservicecommon/authenticate.ts](testservicecommon/authenticate.ts) is a minimal reference.
-
-## Query Scoping
-Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `requireSignedQueries` option to true, queries received by the server will require an associated query digest that scopes the query requested to the client service.
-
-Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` field in the JWT payload, which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. The private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
-
-When the graphql-server sees a request with query scoping turned on, it pulls the client service name from `ctx.auth.clientId` (populated by your `authenticate` function — typically from the `client_id` claim of the auth payload). The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
-```bash
-# Examples of how to create keys used for query digest jwt tokens
-JWT_QUERY_DIGEST_PRIVATE_KEY=$(openssl genrsa 2048 2>/dev/null)
-JWT_QUERY_DIGEST_PUBLIC_KEY=$(echo "$JWT_QUERY_DIGEST_PRIVATE_KEY" | openssl rsa -outform PEM -pubout 2>/dev/null)
-```
-
-Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `signedQueriesWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
-
-Cookies, tokens in the query string, or any other transport scheme are handled inside your `authenticate` function — pull whatever you need off the `FastifyRequest` and return the auth object (or `undefined`). The library no longer exposes `tokenFromReq` / `authFromReq` overrides on `Context`; use `authenticate` instead.
-
-If you also need request-scoped state beyond what `Context` provides (extra caches, helper methods, etc.), you can still subclass `Context` and pass your subclass via the `customContext` option:
-```typescript
-import { GQLServer, Context } from '@txstate-mws/graphql-server'
-class MyContext extends Context {
-  // add request-scoped state or helpers here
-}
-const server = new GQLServer({ authenticate })
-await server.start({
-  resolvers: [...],
-  customContext: MyContext
-})
-```
-
-Keep in mind that if you add brand new methods to your custom Context class, you'll need to reference your class in every resolver after `@Ctx()`:
-```typescript
-@FieldResolver(returns => [Author])
-async authors (@Ctx() ctx: CustomContext, @Root() book: Book) {
-  // return the authors
-}
-```
-### Enforcing/detecting authentication
-As documented above, the `send401` option can be set to make sure your entire API require authentication. If your API is partially public, you'll want to keep this false. Then you can simply call `ctx.requireAuth()` in any resolver that requires authentication or `this.requireAuth()` in any service method.
-
-Your clients will be able to detect an authentication problem by checking whether `errors[0].authenticationError` in the response data is `true`. They may need to redirect their user to a login screen.
 
 ## Authorization
 There are two distinct concepts that are often both referred to as "authorization":
@@ -218,6 +263,140 @@ export class BookService extends AuthzdService {
 }
 ```
 This is also a great way to add more authorization-related helper methods like `fetchCurrentUser` or `isLibraryOwner` for use in multiple services.
+
+## Pagination
+A paginated query returns one page of results as a plain array, while a sibling `pageInfo` query in the same operation reports the page metadata (total page count, current cursor, etc.). The client asks for both at once:
+
+```graphql
+query Books ($pagination: ListOptions) {
+  books (pagination: $pagination) { id title }
+  pageInfo {
+    books { page perPage finalPage }
+  }
+}
+```
+
+Results stay a flat list — no Relay-style edges/nodes wrapping. The tradeoff is that this only works on **top-level Query fields**: the page metadata lives in per-request state keyed by a query name, so it cannot paginate a nested field.
+
+Here's how to build one.
+
+**1. Accept a `ListOptions` argument and wrap the work in `ctx.executePaginated`.** The first argument is a stable key naming the query (`'books'`) — it ties this resolver to the `pageInfo` field in step 3. Your callback receives a `PaginationResponse` to populate and runs the query:
+
+```typescript
+import { Context, ListOptions } from '@txstate-mws/graphql-server'
+
+@Resolver(of => Book)
+export class BookResolver {
+  @Query(returns => [Book])
+  async books (@Ctx() ctx: Context, @Arg('pagination', type => ListOptions, { nullable: true }) pagination?: ListOptions) {
+    return await ctx.executePaginated<Book[]>('books', { pagination }, async pageInfo => {
+      return await ctx.svc(BookService).find(pageInfo)
+    })
+  }
+}
+```
+
+**2. Slice the results in your service** using `pageInfo.page` and `pageInfo.perPage`, and write `pageInfo.finalPage` back onto the object before returning the page — `pageInfo` is mutable, and the helper reads it after your callback resolves:
+
+```typescript
+async find (pageInfo: PaginationResponse) {
+  const all = await this.loadBooks()
+  pageInfo.finalPage = Math.max(1, Math.ceil(all.length / pageInfo.perPage))
+  const start = (pageInfo.page - 1) * pageInfo.perPage
+  return all.slice(start, start + pageInfo.perPage)
+}
+```
+
+**3. Expose the page metadata with a `@FieldResolver` on `PageInformation`,** reading back what your callback populated via the same key:
+
+```typescript
+import { Context, PageInformation, PaginationResponse } from '@txstate-mws/graphql-server'
+
+@Resolver(of => PageInformation)
+export class BookPageInformationResolver {
+  @FieldResolver(returns => PaginationResponse, { nullable: true })
+  async books (@Ctx() ctx: Context) {
+    return await ctx.getPaginationInfo('books')
+  }
+}
+```
+
+Register both resolvers. The generic `pageInfo` query is wired up for you as soon as any `@Resolver(of => PageInformation)` is present:
+
+```typescript
+await server.start({ resolvers: [BookResolver, BookPageInformationResolver, /* ... */] })
+```
+
+That's the whole pattern. `PageInformation` has no fields of its own — each paginated query contributes one field resolver here — so the `pageInfo` query only appears once you register at least one. (Split those field resolvers across as many `@Resolver(of => PageInformation)` classes as you like; type-graphql merges them.)
+
+A few behaviors worth knowing: if a client omits `pagination` entirely (or sends it with neither `page` nor `perPage`), the full result set comes back and `pageInfo` reports a single page covering everything. When a client paginates but omits `perPage`, it defaults to 100 — pass `defaultPageSize` alongside `pagination`/`sort` to change that per query. `page` and `perPage` values below 1 are clamped to 1. And requesting the same paginated query twice in one operation throws — the per-request key would collide.
+
+### Sorting
+
+Sorting is a **separate, independent argument** from pagination — accept a `sort: [SortEntryInput!]` arg (a list of `{ field, direction }`) and pass it alongside `pagination` to `executePaginated`. Keeping them separate means a service can implement paging and sorting on its own schedule: add one arg now and the other later, with no breaking change.
+
+```typescript
+import { Context, ListOptions, SortEntry } from '@txstate-mws/graphql-server'
+
+@Query(returns => [Book])
+async books (
+  @Ctx() ctx: Context,
+  @Arg('pagination', type => ListOptions, { nullable: true }) pagination?: ListOptions,
+  @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]
+) {
+  return await ctx.executePaginated<Book[]>('books', { pagination, sort }, async pageInfo => {
+    return await ctx.svc(BookService).find(pageInfo) // read pageInfo.sortOrder to build the ORDER BY
+  })
+}
+```
+
+`pageInfo.sortOrder` is the single source of truth for the *effective* sort. The helper seeds it from the request `sort`, your service reads it to build the query, and the same value is echoed back to the client. Pass `defaultSort` to declare the order the API applies when the client sends none; it flows back to the UI automatically (handy for marking the active sort column):
+
+```typescript
+await ctx.executePaginated<Book[]>('books', {
+  pagination, sort,
+  defaultSort: [{ field: 'title', direction: SortDirection.ASC }]
+}, async pageInfo => { /* ... */ })
+```
+
+If a service's default is dynamic (depends on filter or role), skip `defaultSort` and just set `pageInfo.sortOrder` inside the callback.
+
+```typescript
+await ctx.executePaginated<Book[]>('books', { pagination, sort }, async pageInfo => {
+  if (!pageInfo.sortOrder?.length) {
+    // no client sort — pick a default based on request state, and report it back
+    pageInfo.sortOrder = filter?.search
+      ? [{ field: 'relevance', direction: SortDirection.DESC }]
+      : [{ field: 'title', direction: SortDirection.ASC }]
+  }
+  return await ctx.svc(BookService).find(filter, pageInfo)
+})
+```
+
+### Cursor pagination
+
+For forward-only paging, swap in `CursorListOptions` (`perPage` + `after`) and `ctx.executeCursorPaginated`. The structure is identical to above; your service writes `hasNextPage` and `endCursor` onto the `CursorResponse` instead of `finalPage`, and the client passes a page's `endCursor` back as `after` to fetch the next one:
+
+```typescript
+import { Context, CursorListOptions, CursorResponse } from '@txstate-mws/graphql-server'
+
+@Query(returns => [Book])
+async cursorBooks (@Ctx() ctx: Context, @Arg('pagination', type => CursorListOptions, { nullable: true }) pagination?: CursorListOptions, @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]) {
+  return await ctx.executeCursorPaginated<Book[]>('cursorBooks', { pagination, sort }, async pageInfo => {
+    // pageInfo.after / pageInfo.perPage come from the request; set pageInfo.endCursor / pageInfo.hasNextPage
+    return await ctx.svc(BookService).findByCursor(pageInfo)
+  })
+}
+
+// note the type argument so getPaginationInfo returns a CursorResponse
+@FieldResolver(returns => CursorResponse, { nullable: true })
+async cursorBooks (@Ctx() ctx: Context) {
+  return await ctx.getPaginationInfo<CursorResponse>('cursorBooks')
+}
+```
+
+To offer both page-number and cursor paging over the same data, expose two top-level resolvers (e.g. `books` and `booksByCursor`) rather than one resolver that accepts either input — a combined type would carry both field sets, leaving half of them meaningless for any given request.
+
 ## Client Scope Enforcement
 When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — provide either or both of `fieldIsInScope` or `typeIsInScope`.
 
@@ -295,88 +474,120 @@ async name (@Ctx() ctx: Context, @Root() person: Person) {
   return scope.anonymizeNames ? '<redacted>' : person.name
 }
 ```
+## Client Scope Enforcement Alternative: Signed Queries
+Sometimes we want to verify that a client service has authorization to process a query. By setting the graphql-server configuration `requireSignedQueries` option to true, queries received by the server will require an associated query digest that scopes the query requested to the client service.
+
+Query digests are a sha256 hash of the client service name/id and a query string. This digest is then bundled as the `qd` field in the JWT payload, which is signed by a private key for approved queries. The private query digest key is never shared or accessed by the client service. The private key is only used to sign approved queries. The JWT that is generated may then be checked into the repo. When the client service needs to make a request to the graphql service it will send the associated query digest JWT in the `x-query-digest` http header along with it's `client_id` service name JWT in the authentication header and query string in the body.
+
+When the graphql-server sees a request with query scoping turned on, it pulls the client service name from `ctx.auth.clientId` (populated by your `authenticate` function — typically from the `client_id` claim of the auth payload). The client service name is then hashed with the query sent in the body of the request to generate a query digest. It is then matched to the `qd` hash found in the signed query digest token that was also sent by the client service in the `x-query-digest` header. If it is a match the query is indeed allowed by this client service and may be processed.
+```bash
+# Examples of how to create keys used for query digest jwt tokens
+JWT_QUERY_DIGEST_PRIVATE_KEY=$(openssl genrsa 2048 2>/dev/null)
+JWT_QUERY_DIGEST_PUBLIC_KEY=$(echo "$JWT_QUERY_DIGEST_PRIVATE_KEY" | openssl rsa -outform PEM -pubout 2>/dev/null)
+```
+
+Query scoping allows for some clients to be whitelisted and not require query digest with their requests. Use the graphql-server `signedQueriesWhitelist: Set<string>` option to contain a collection of the client service names excluded from Query scoping.
+
+Cookies, tokens in the query string, or any other transport scheme are handled inside your `authenticate` function — pull whatever you need off the `FastifyRequest` and return the auth object (or `undefined`). The library no longer exposes `tokenFromReq` / `authFromReq` overrides on `Context`; use `authenticate` instead.
+
+If you also need request-scoped state beyond what `Context` provides (extra caches, helper methods, etc.), you can still subclass `Context` and pass your subclass via the `customContext` option:
+```typescript
+import { GQLServer, Context } from '@txstate-mws/graphql-server'
+class MyContext extends Context {
+  // add request-scoped state or helpers here
+}
+const server = new GQLServer({ authenticate })
+await server.start({
+  resolvers: [...],
+  customContext: MyContext
+})
+```
+
+One caveat for custom state: `ctx.query()` executes its sub-operation against a derived copy of the context (so paginated queries inside it don't collide with the outer operation's pagination state). State you *mutate* — a `Map` cache, an array you push onto — is shared and works normally. But a property a sub-operation resolver *assigns*, like a `ctx.dbQueryCount += 1` metric or a `ctx.sawDeprecatedField = true` flag your `after` hook reads, lands on the copy and is invisible to the outer operation afterward.
+
+Keep in mind that if you add brand new methods to your custom Context class, you'll need to reference your class in every resolver after `@Ctx()`:
+```typescript
+@FieldResolver(returns => [Author])
+async authors (@Ctx() ctx: CustomContext, @Root() book: Book) {
+  // return the authors
+}
+```
+### Enforcing/detecting authentication
+As documented above, the `send401` option can be set to make sure your entire API require authentication. If your API is partially public, you'll want to keep this false. Then you can simply call `ctx.requireAuth()` in any resolver that requires authentication or `this.requireAuth()` in any service method.
+
+Your clients will be able to detect an authentication problem by checking whether `errors[0].authenticationError` in the response data is `true`. They may need to redirect their user to a login screen.
 
 ## Timing
 Earlier I mentioned `ctx.timing(...messages: string[])`. This is just a quick convenience method to help you track the passage of time for an individual request. You can use it to replace `console.log` statments, and each time it will print the amount of time elapsed since the last statement. Makes it easier to investigate where your bottlenecks are.
-
-## Validation Errors
-Error handling in GraphQL can get a little complicated since there are so many different ways to return errors. You can return an HTTP status code, but it's not very GraphQL-like because GraphQL is supposed to be transport-agnostic. So usually you return an `errors` array with a 200 response, and each error can have an extensions property with all kinds of extra metadata. That's also not very GraphQL-like because the extensions property doesn't have a self-documented spec with shape and types.
-
-What this library encourages is to split your errors into unexpected system errors and expected validation errors. Unexpected errors happen when the infrastructure is offline or a developer has made a mistake (either an API developer or a UI developer). Those errors get thrown and end up in the `errors` array.
-
-Expected errors happen when a user makes a mistake, like specifying a date outside the allowed range. These errors should not be in the `errors` array at all. Instead, we should allow for the possibility of an error in the response.
-
-This library provides a `ValidatedResponse` type for this purpose. A `ValidatedResponse` has a `success` property to indicate whether the mutation took place or was rejected without altering any state. It also has a `messages` property with messages to be presented to the user. Each message has a type: `error`, `warning`, or `success`, and an `arg` identifying the mutation argument that caused the message. `arg` may be dot-separated or in bracket notation when one of the arguments is an object and the error is deep inside it.
-
-Note that there can be messages even when `success` is `true`. Messages with type `success` are to let the user know that they did something well; for example, the password they've entered is strong. Messages with type `warning` warn the user about something, but allow the mutation to complete anyway.
-
-The `arg` should always identify the GraphQL argument that caused the error. For instance, `createUser(username: 'Hamburger')` might reply with a message that looks like `{ message: 'That is not a name for humans!', type: 'error', arg: 'username' }`.
-
-To use a `ValidatedResponse`, simply create and return one during the course of servicing a mutation. Note that you often want to collect validation errors instead of returning immediately, so that you can communicate to users about all the things that went wrong all at once instead of hitting them with a new one each time they resolve something. You can use the `hasErrors` method to determine whether one or more errors occurred.
-```typescript
-class UserService extends BaseService {
-  async registerForClass (section: Section) {
-    if (!await userAllowedToRegister(this.auth.username, section)) {
-      return ValidatedResponse.error('This user cannot register for this course.')
-    }
-    const response = new ValidatedResponse()
-    if (!await sectionHasAvailability(section)) {
-      response.addMessage('This course is full.', 'section', 'error')
-    }
-    if (!await sectionHasAnInstructor(section)) {
-      response.addMessage('This course has no instructor yet.', 'section', 'error')
-    }
-
-    if (!response.hasErrors()) {
-      await registerUserForSection(ctx.auth.username, section)
-      response.success = true
-    }
-    return response
-  }
-}
-```
-### Extending ValidatedResponse
-GraphQL mutations are encouraged to return an object, usually the object which was just mutated. To do
-this, you would need to extend the `ValidatedResponse` to add your return object.
-```typescript
-@ObjectType()
-export class BookValidatedResponse {
-  @Field(type => Book)
-  book: Book
-
-  constructor (args: ValidatedResponseArgs & { book: Book }) {
-    super(args)
-    this.book = args.book
-  }
-}
-```
-### Convienence Assertions
-`ValidatedResponse` also has several convenience methods to help you quickly make assertions, and any that fail will set `success` to `false` and add an appropriate message against the correct `arg`.
-```typescript
-  async createObject(args: CreateObjectArguments) {
-    const response = new ValidatedResponse()
-    response.assertLength(args, 'friend.username', 8, 12)
-    if (!response.hasErrors()) {
-      await addObjectToDatabase(args)
-      response.success = true
-    }
-    return response
-  }
-```
-The convenience methods are:
-* `response.assert (condition: boolean, message: string, arg?: string)`
-* `response.assertBetween (input: any, arg: string, min: number, max: number)`
-  * error message will be `Value out of range, must be between ${min} and ${max}`
-* `assertPositive (input: any, arg: string)`
-  * error message will be `Value must not be negative`
-* `assertLength (input: any, arg: string, min: number, max: number)`
-  * error message for strings `Character maximum exceeded.` or `Character minimum not met.`
-  * error message for arrays `Too many entries.` or `Not enough entries.`
 
 ## Logging
 Logging is pre-configured for you using `fastify` and `pino`. Log entries are in JSON format. The request complete log entry includes GraphQL-specific properties recording the query, operation name, and the contents of `ctx.auth`.
 
 When `NODE_ENV` is set to `development`, the request log is mostly disabled, only printing the response time and query for each. Errors will be logged directly to the console instead of in JSON format, for much better readability with proper line breaks.
+
+### The `after` hook
+The `after` option runs after every (non-introspection) operation completes, giving you a seam for custom logging and auditing. Its full signature is:
+
+```typescript
+after?: (
+  queryTime: number,                  // milliseconds the operation spent executing
+  operationName: string | undefined,  // the named operation, if the client provided one
+  query: string,                       // the raw query/mutation string
+  auth: any,                           // the resolved ctx.auth (e.g. the decoded token payload)
+  variables: any,                      // the operation's variables
+  data: any,                           // the response data
+  errors: GraphQLError[] | undefined,  // any errors that occurred
+  ctx: Context                         // the request context
+) => void | Promise<void>
+```
+
+If `after` returns a promise it is not awaited — the response is sent without waiting for it — and any rejection is logged, so the request is never held up or failed by a logging error. Don't rely on the hook having completed by the time the client receives the response.
+
+A common use is to keep an audit trail of mutations. The example below writes one row per successful mutation to a SQLite table. It inspects `query` to skip read-only operations and `data` to skip mutations that returned `success: false`:
+
+```typescript
+import Database from 'better-sqlite3'
+import { type Context } from '@txstate-mws/graphql-server'
+import { type GraphQLError } from 'graphql'
+
+const db = new Database('mutations.db')
+db.exec(`
+  CREATE TABLE IF NOT EXISTS mutationlog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId TEXT,
+    operationName TEXT,
+    query TEXT NOT NULL,
+    variables TEXT,
+    queryTime INTEGER,
+    createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`)
+const insertMutation = db.prepare(`
+  INSERT INTO mutationlog (userId, operationName, query, variables, queryTime)
+  VALUES (@userId, @operationName, @query, @variables, @queryTime)
+`)
+
+function logMutation (queryTime: number, operationName: string | undefined, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: Context) {
+  // only log mutations that actually succeeded
+  if (!query.trimStart().startsWith('mutation')) return
+  if (!data?.[Object.keys(data)[0]]?.success) return
+  insertMutation.run({
+    userId: auth?.sub ?? auth?.client_id ?? null,
+    operationName: operationName ?? null,
+    query,
+    variables: variables != null ? JSON.stringify(variables) : null,
+    queryTime
+  })
+}
+
+const server = new GQLServer({ /* ...fastify configuration */ })
+server.start({
+  resolvers: [/* ... */],
+  after: logMutation
+}).catch(e => { console.error(e); process.exit(1) })
+```
+
+> If your mutations carry large or sensitive payloads (passwords, file contents, etc.), redact `variables` before storing it rather than serializing the whole object.
 
 ## Federation
 If your GraphQL API is intended to be a member of a federation gateway, graphql-server provides some
