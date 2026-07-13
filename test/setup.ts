@@ -1,6 +1,6 @@
 import { sleep } from 'txstate-utils'
 
-const SERVICE_TIMEOUT_MS = 10000
+const SERVICE_TIMEOUT_MS = 20000
 
 const services = [
   'http://basicbookservice/graphql',
