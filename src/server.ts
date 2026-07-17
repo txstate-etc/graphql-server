@@ -3,7 +3,7 @@ import { Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { Multipart } from '@fastify/multipart'
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import Server, { type FastifyTxStateOptions, HttpError, prodLogger } from 'fastify-txstate'
+import Server, { type FastifyTxStateOptions, HttpError, prodLogger, registeredExceptRoutes } from 'fastify-txstate'
 import { readFile } from 'node:fs/promises'
 import { execute, type ExecutionResult, type GraphQLError, type GraphQLSchema, type DefinitionNode, type OperationDefinitionNode, Kind, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
@@ -118,7 +118,13 @@ export class GQLServer extends Server {
     const ContextClass = options.customContext ?? Context
 
     if (options.playgroundEndpoint !== false && process.env.GRAPHQL_PLAYGROUND !== 'false') {
-      this.app.get(options.playgroundEndpoint ?? '/', async (req, res) => {
+      const playgroundEndpoint = options.playgroundEndpoint ?? '/'
+      // the playground HTML/JS is a static shell that acquires its own token in the
+      // browser, so delivering it must not require authentication even when the app
+      // sets authenticateAll
+      registeredExceptRoutes.add(playgroundEndpoint)
+      registeredExceptRoutes.add('/playground.js')
+      this.app.get(playgroundEndpoint, async (req, res) => {
         res.type('text/html')
         const pg = (await readFile(path.join(moduleDir, 'playground.html'))).toString('utf-8')
         return pg
@@ -133,7 +139,9 @@ export class GQLServer extends Server {
       })
     }
     if (options.voyagerEndpoint !== false && process.env.GRAPHQL_VOYAGER !== 'false') {
-      this.app.get(options.voyagerEndpoint ?? '/voyager', async (req, res) => {
+      const voyagerEndpoint = options.voyagerEndpoint ?? '/voyager'
+      registeredExceptRoutes.add(voyagerEndpoint)
+      this.app.get(voyagerEndpoint, async (req, res) => {
         res.type('text/html')
         const pg = (await readFile(path.join(moduleDir, 'voyager.html'))).toString('utf-8')
         return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/v, (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
