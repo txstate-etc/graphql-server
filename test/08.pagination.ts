@@ -1,19 +1,20 @@
 import { describe, it } from 'node:test'
 import axios from 'axios'
 import { expect } from 'chai'
-import { basicBookQuery } from './01.basic.ts'
+import { basicBookQuery, bookQuery } from './01.basic.ts'
 
-const pagedQuery = 'query ($pagination: Pagination) { pagedBooks (pagination: $pagination) { id } pageInfo { pagedBooks { page perPage finalPage } } }'
+const pagedQuery = 'query ($pagination: Pagination) { pagedBooks (pagination: $pagination) { id } pageInfo { pagedBooks { page perPage finalPage totalItems } } }'
 
 describe('pagination', () => {
   it('should return every result on a single page when no pagination argument is given', async () => {
-    const { books, pagedBooks, pageInfo } = await basicBookQuery('{ books { id } pagedBooks { id } pageInfo { pagedBooks { page perPage finalPage } } }')
+    const { books, pagedBooks, pageInfo } = await basicBookQuery('{ books { id } pagedBooks { id } pageInfo { pagedBooks { page perPage finalPage totalItems } } }')
     expect(pagedBooks.length).to.equal(books.length)
     expect(pageInfo.pagedBooks.page).to.equal(1)
     expect(pageInfo.pagedBooks.finalPage).to.equal(1)
+    expect(pageInfo.pagedBooks.totalItems).to.equal(books.length)
   })
 
-  it('should return a single page of results and report the total number of pages', async () => {
+  it('should return a single page of results and report the total number of results and pages', async () => {
     const { books } = await basicBookQuery('{ books { id } }')
     const total = books.length
     const perPage = 5
@@ -22,6 +23,8 @@ describe('pagination', () => {
     expect(pagedBooks.length).to.equal(perPage)
     expect(pageInfo.pagedBooks.page).to.equal(1)
     expect(pageInfo.pagedBooks.perPage).to.equal(perPage)
+    expect(pageInfo.pagedBooks.totalItems).to.equal(total)
+    // the demo service sets only totalItems; finalPage must derive from it
     expect(pageInfo.pagedBooks.finalPage).to.equal(Math.ceil(total / perPage))
   })
 
@@ -109,6 +112,16 @@ describe('pagination', () => {
     }
   })
 
+  it('should advertise totalItems and finalPage as non-nullable when the API exposes them via PaginationResponseWithTotals', async () => {
+    // introspect the federated book service; the basic one disables introspection
+    const { __type: type } = await bookQuery('{ __type (name: "PaginationResponseWithTotals") { fields { name type { kind ofType { name } } } } }')
+    for (const name of ['totalItems', 'finalPage']) {
+      const field = type.fields.find((f: any) => f.name === name)
+      expect(field.type.kind).to.equal('NON_NULL')
+      expect(field.type.ofType.name).to.equal('Int')
+    }
+  })
+
   it('should apply the requested sort and echo it back in pageInfo', async () => {
     const sortedQuery = 'query ($pagination: Pagination, $sort: [SortEntryInput!]) { pagedBooks (pagination: $pagination, sort: $sort) { title } pageInfo { pagedBooks { sortOrder { field direction } } } }'
     const { pagedBooks, pageInfo } = await basicBookQuery(sortedQuery, { pagination: { page: 1, perPage: 100 }, sort: [{ field: 'title', direction: 'ASC' }] })
@@ -126,14 +139,16 @@ describe('pagination', () => {
   })
 })
 
-const cursorQuery = 'query ($pagination: CursorPagination) { cursorBooks (pagination: $pagination) { id } pageInfo { cursorBooks { hasNextPage endCursor } } }'
+const cursorQuery = 'query ($pagination: CursorPagination) { cursorBooks (pagination: $pagination) { id } pageInfo { cursorBooks { hasNextPage endCursor totalItems } } }'
 
 describe('cursor pagination', () => {
   it('should return a page and a cursor that fetches the following, non-overlapping page', async () => {
+    const { books } = await basicBookQuery('{ books { id } }')
     const { cursorBooks: page1, pageInfo: info1 } = await basicBookQuery(cursorQuery, { pagination: { perPage: 5 } })
     expect(page1.length).to.equal(5)
     expect(info1.cursorBooks.hasNextPage).to.equal(true)
     expect(info1.cursorBooks.endCursor).to.be.a('string')
+    expect(info1.cursorBooks.totalItems).to.equal(books.length)
 
     const { cursorBooks: page2 } = await basicBookQuery(cursorQuery, { pagination: { perPage: 5, after: info1.cursorBooks.endCursor } })
     expect(page2.length).to.equal(5)

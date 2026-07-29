@@ -53,7 +53,7 @@ export async function getBooks (filter?: BookFilter, pageInfo?: PaginationRespon
   }
   books = applySort(books, pageInfo?.sortOrder)
   if (pageInfo) {
-    pageInfo.finalPage = Math.max(1, Math.ceil(books.length / pageInfo.perPage))
+    pageInfo.totalItems = books.length // finalPage derives from totalItems automatically
     const start = (pageInfo.page - 1) * pageInfo.perPage
     books = books.slice(start, start + pageInfo.perPage)
   }
@@ -73,5 +73,6 @@ export async function getBooksByCursor (filter: BookFilter | undefined, info: Cu
   const last = page.at(-1)
   info.endCursor = last != null ? String(last.id) : undefined
   info.hasNextPage = start + page.length < books.length
+  info.totalItems = books.length // optional on CursorResponse; this demo has the count in hand anyway
   return page
 }

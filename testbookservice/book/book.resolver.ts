@@ -1,5 +1,5 @@
 import { Arg, Ctx, FieldResolver, Int, Mutation, Query, Resolver, Root } from 'type-graphql'
-import { AuthError, Context, CursorPagination, CursorResponse, Pagination, PageInformation, PaginationResponse, ResolveReference, SortEntry, UploadInfo } from '../../src/index.ts'
+import { AuthError, Context, CursorPagination, CursorResponseWithTotalItems, Pagination, PageInformation, PaginationResponseWithTotals, ResolveReference, SortEntry, UploadInfo } from '../../src/index.ts'
 import { Author, AuthorFilter } from '../author/author.model.ts'
 import { AuthorService } from '../author/author.service.ts'
 import { Book, BookFilter } from './book.model.ts'
@@ -58,13 +58,13 @@ export class BookResolver {
 
 @Resolver(of => PageInformation)
 export class BookPageInformationResolver {
-  @FieldResolver(returns => PaginationResponse, { nullable: true })
+  @FieldResolver(returns => PaginationResponseWithTotals, { nullable: true })
   async pagedBooks (@Ctx() ctx: Context) {
-    return await ctx.getPaginationInfo('pagedBooks')
+    return await ctx.getPaginationInfo<PaginationResponseWithTotals>('pagedBooks')
   }
 
-  @FieldResolver(returns => CursorResponse, { nullable: true })
+  @FieldResolver(returns => CursorResponseWithTotalItems, { nullable: true })
   async cursorBooks (@Ctx() ctx: Context) {
-    return await ctx.getPaginationInfo<CursorResponse>('cursorBooks')
+    return await ctx.getPaginationInfo<CursorResponseWithTotalItems>('cursorBooks')
   }
 }

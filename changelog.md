@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.2.0
+
+Paginated queries can now report the total number of results, not just the last page number. Your service sets one property — `pageInfo.totalItems = count` — and `finalPage` derives itself from `totalItems` and `perPage`, so the old `Math.ceil` boilerplate goes away.
+
+The totals are opt-in at the schema level. `PaginationResponse` no longer advertises `finalPage`; it carries only `page`, `perPage`, and `sortOrder`. A new `PaginationResponseWithTotals` subclass adds `totalItems` and `finalPage`, both non-nullable. This is deliberate: any given API either always counts its results or never does, so a shared nullable `totalItems` would force every client to handle a null that can never happen, and an API that never counts shouldn't carry dead fields. Cursor pagination gets the same treatment with `CursorResponseWithTotalItems` (no `finalPage` there — cursor pages have no page numbers).
+
+**Breaking:** if you adopted pagination in 3.1.x, `finalPage` disappears from your schema until you migrate. Your code still compiles — the property still exists on `PaginationResponse` — but it is no longer a GraphQL field there.
+
+**Migrate:**
+- In each `PageInformation` field resolver, return `PaginationResponseWithTotals` instead of `PaginationResponse`, and pass it as the type argument: `ctx.getPaginationInfo<PaginationResponseWithTotals>('books')`.
+- In your service, set `pageInfo.totalItems = count` instead of computing `pageInfo.finalPage` yourself. (Setting `finalPage` directly still works and wins over the derived value, for the rare backend that knows its page count but not its item count.)
+- Cursor-paginated queries that want a total do the same with `CursorResponseWithTotalItems` and `pageInfo.totalItems`.
+
 ## 3.0.0
 
 Major rewrite. ESM-only, fastify 5, type-graphql 2, graphql 16, Apollo Federation v2. All four are breaking, and the auth model is reorganized on top of that. Read the migration sections in order — most apps will need to touch all of them.

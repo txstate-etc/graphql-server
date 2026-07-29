@@ -128,8 +128,9 @@ export class MockContext<AuthType extends FastifyTxStateAuthInfo = FastifyTxStat
    * A lighter-weight alternative to the nodes/edges connection pattern, for paginating a top-level
    * Query field by **page number**. It builds a `PaginationResponse` (`pageInfo`) from the requested
    * `Pagination` and hands it to your `work` callback, which runs the query and populates
-   * `pageInfo.finalPage` (and optionally `pageInfo.sortOrder`) as a side effect before returning the
-   * page of results.
+   * `pageInfo.totalItems` (and optionally `pageInfo.sortOrder`) as a side effect before returning
+   * the page of results. `finalPage` derives itself from `totalItems`; expose both to clients by
+   * returning `PaginationResponseWithTotals` from the matching `PageInformation` field resolver.
    *
    * The populated `pageInfo` is stashed on the context keyed by `queryType` so a sibling
    * `pageInfo { <queryType> }` selection in the same request can read it back via `getPaginationInfo`.

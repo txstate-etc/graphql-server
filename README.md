@@ -271,7 +271,7 @@ A paginated query returns one page of results as a plain array, while a sibling 
 query Books ($pagination: Pagination) {
   books (pagination: $pagination) { id title }
   pageInfo {
-    books { page perPage finalPage }
+    books { page perPage finalPage totalItems }
   }
 }
 ```
@@ -296,30 +296,34 @@ export class BookResolver {
 }
 ```
 
-**2. Slice the results in your service** using `pageInfo.page` and `pageInfo.perPage`, and write `pageInfo.finalPage` back onto the object before returning the page — `pageInfo` is mutable, and the helper reads it after your callback resolves:
+**2. Slice the results in your service** using `pageInfo.page` and `pageInfo.perPage`, and write `pageInfo.totalItems` back onto the object before returning the page — `pageInfo` is mutable, and the helper reads it after your callback resolves. `finalPage` derives itself from `totalItems` and `perPage`, so one assignment covers both fields:
 
 ```typescript
 async find (pageInfo: PaginationResponse) {
   const all = await this.loadBooks()
-  pageInfo.finalPage = Math.max(1, Math.ceil(all.length / pageInfo.perPage))
+  pageInfo.totalItems = all.length // finalPage is derived automatically
   const start = (pageInfo.page - 1) * pageInfo.perPage
   return all.slice(start, start + pageInfo.perPage)
 }
 ```
 
-**3. Expose the page metadata with a `@FieldResolver` on `PageInformation`,** reading back what your callback populated via the same key:
+**3. Expose the page metadata with a `@FieldResolver` on `PageInformation`,** reading back what your callback populated via the same key. Return `PaginationResponseWithTotals` so the schema advertises `totalItems` and `finalPage` as non-nullable:
 
 ```typescript
-import { Context, PageInformation, PaginationResponse } from '@txstate-mws/graphql-server'
+import { Context, PageInformation, PaginationResponseWithTotals } from '@txstate-mws/graphql-server'
 
 @Resolver(of => PageInformation)
 export class BookPageInformationResolver {
-  @FieldResolver(returns => PaginationResponse, { nullable: true })
+  @FieldResolver(returns => PaginationResponseWithTotals, { nullable: true })
   async books (@Ctx() ctx: Context) {
-    return await ctx.getPaginationInfo('books')
+    return await ctx.getPaginationInfo<PaginationResponseWithTotals>('books')
   }
 }
 ```
+
+### Note about totals and nullability
+
+Why two response classes? An API either counts its results on every request or it never does — but a single shared type would have to declare `totalItems` nullable for everyone, forcing every client to handle a null that can never happen. So the counting is opt-in at the schema level: the plain `PaginationResponse` exposes only `page`, `perPage`, and `sortOrder`, while `PaginationResponseWithTotals` adds `totalItems` and `finalPage` as non-nullable. Use the plain class when counting would cost you an extra query you don't want to pay for; there's no dead field in your schema either way. If a service only *sometimes* knows the count, declare your own subclass of `PaginationResponse` with a `nullable: true` field over the same `totalItems` property.
 
 Register both resolvers. The generic `pageInfo` query is wired up for you as soon as any `@Resolver(of => PageInformation)` is present:
 
@@ -375,10 +379,10 @@ await ctx.executePaginated<Book[]>('books', { pagination, sort }, async pageInfo
 
 ### Cursor pagination
 
-For forward-only paging, swap in `CursorPagination` (`perPage` + `after`) and `ctx.executeCursorPaginated`. The structure is identical to above; your service writes `hasNextPage` and `endCursor` onto the `CursorResponse` instead of `finalPage`, and the client passes a page's `endCursor` back as `after` to fetch the next one:
+For forward-only paging, swap in `CursorPagination` (`perPage` + `after`) and `ctx.executeCursorPaginated`. The structure is identical to above; your service writes `hasNextPage` and `endCursor` onto the `CursorResponse` instead of `totalItems`, and the client passes a page's `endCursor` back as `after` to fetch the next one. The same totals opt-in applies here: return `CursorResponseWithTotalItems` from your `PageInformation` field resolver when your service sets `pageInfo.totalItems` (there's no `finalPage` variant — cursor pages have no page numbers):
 
 ```typescript
-import { Context, CursorPagination, CursorResponse } from '@txstate-mws/graphql-server'
+import { Context, CursorPagination, CursorResponseWithTotalItems } from '@txstate-mws/graphql-server'
 
 @Query(returns => [Book])
 async cursorBooks (@Ctx() ctx: Context, @Arg('pagination', type => CursorPagination, { nullable: true }) pagination?: CursorPagination, @Arg('sort', type => [SortEntry], { nullable: true }) sort?: SortEntry[]) {
@@ -389,9 +393,9 @@ async cursorBooks (@Ctx() ctx: Context, @Arg('pagination', type => CursorPaginat
 }
 
 // note the type argument so getPaginationInfo returns a CursorResponse
-@FieldResolver(returns => CursorResponse, { nullable: true })
+@FieldResolver(returns => CursorResponseWithTotalItems, { nullable: true })
 async cursorBooks (@Ctx() ctx: Context) {
-  return await ctx.getPaginationInfo<CursorResponse>('cursorBooks')
+  return await ctx.getPaginationInfo<CursorResponseWithTotalItems>('cursorBooks')
 }
 ```
 
