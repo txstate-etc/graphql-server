@@ -117,3 +117,53 @@ describe('basic tests', () => {
     expect(libraries.length).to.be.greaterThan(0)
   })
 })
+
+// Book 2 is 1984, whose row lists author ids [2, 999] — 999 deliberately dangling. A real
+// fetch filters it out while the @IdOnly stub passes it through, so the response data itself
+// reveals whether the escape hatch was taken. (A shared fetch counter can't work here: other
+// test files import helpers from this one, which re-registers this suite in their parallel
+// processes.)
+describe('@IdOnly escape hatch', () => {
+  const nineteenEightyFour = '(filter: { ids: [2] })'
+  const stubbed = [2, 999] // the raw ids on the book row, hatch taken
+  const fetched = [2] // what an actual fetch returns
+
+  it('should skip the author fetch when only id is requested', async () => {
+    const { books } = await basicBookQuery(`{ books ${nineteenEightyFour} { authors { id } } }`)
+    expect(books[0].authors.map((a: any) => a.id)).to.have.members(stubbed)
+  })
+  it('should still skip when the id is aliased and __typename rides along', async () => {
+    const { books } = await basicBookQuery(`{ books ${nineteenEightyFour} { authors { __typename writerId: id } } }`)
+    expect(books[0].authors.map((a: any) => a.writerId)).to.have.members(stubbed)
+    expect(books[0].authors[0].__typename).to.equal('Author')
+  })
+  it('should still skip when the id-only selection arrives via fragments', async () => {
+    const { books } = await basicBookQuery(`query { books ${nineteenEightyFour} { authors { ...AuthorId ... on Author { id } } } } fragment AuthorId on Author { id }`)
+    expect(books[0].authors.map((a: any) => a.id)).to.have.members(stubbed)
+  })
+  it('should fetch when any field beyond id is requested', async () => {
+    const { books } = await basicBookQuery(`{ books ${nineteenEightyFour} { authors { id name } } }`)
+    expect(books[0].authors.map((a: any) => a.id)).to.have.members(fetched)
+    expect(books[0].authors[0].name).to.equal('George Orwell')
+  })
+  it('should evaluate @include directives against query variables', async () => {
+    const query = `query ($withName: Boolean!) { books ${nineteenEightyFour} { authors { id name @include(if: $withName) } } }`
+    const { books: skippedBooks } = await basicBookQuery(query, { withName: false })
+    expect(skippedBooks[0].authors.map((a: any) => a.id)).to.have.members(stubbed)
+    expect(skippedBooks[0].authors[0].name).to.be.undefined
+    const { books: fetchedBooks } = await basicBookQuery(query, { withName: true })
+    expect(fetchedBooks[0].authors.map((a: any) => a.id)).to.have.members(fetched)
+    expect(fetchedBooks[0].authors[0].name).to.equal('George Orwell')
+  })
+  it('should evaluate @skip directives against query variables', async () => {
+    const query = `query ($hideName: Boolean!) { books ${nineteenEightyFour} { authors { id name @skip(if: $hideName) } } }`
+    const { books: skippedBooks } = await basicBookQuery(query, { hideName: true })
+    expect(skippedBooks[0].authors.map((a: any) => a.id)).to.have.members(stubbed)
+    const { books: fetchedBooks } = await basicBookQuery(query, { hideName: false })
+    expect(fetchedBooks[0].authors.map((a: any) => a.id)).to.have.members(fetched)
+  })
+  it('should fetch when a filter argument could change the result, even for an id-only selection', async () => {
+    const { books } = await basicBookQuery(`{ books ${nineteenEightyFour} { authors (filter: { search: "orwell" }) { id } } }`)
+    expect(books[0].authors.map((a: any) => a.id)).to.deep.equal(fetched)
+  })
+})

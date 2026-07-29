@@ -401,6 +401,37 @@ async cursorBooks (@Ctx() ctx: Context) {
 
 To offer both page-number and cursor paging over the same data, expose two top-level resolvers (e.g. `books` and `booksByCursor`) rather than one resolver that accepts either input — a combined type would carry both field sets, leaving half of them meaningless for any given request.
 
+## Skipping fetches when only the id was requested
+
+Way back in the Services section I wrote this field resolver:
+
+```typescript
+@FieldResolver(returns => Person)
+async author (@Ctx() ctx: Context, @Root() book: Book) {
+  return await ctx.svc(PersonService).findById(book.authorId)
+}
+```
+
+There's a small waste hiding in it. Clients ask for a relation's id and nothing else — `{ books { author { id } } }` — and the resolver can't see that, so it loads the entire author record to serve up an id that was sitting on the book row the whole time.
+
+I have no interest in translating requested field sets into custom SQL — that way lies madness — but this one case is common enough, and cheap enough to detect, that it deserves an escape hatch. Declare an `@IdOnly()` parameter and it comes in `true` whenever the selection needs nothing beyond `id` (`__typename` doesn't count against you, and aliases, fragments, and `@skip`/`@include` directives are all evaluated properly). When it's true, return a stub and skip the fetch:
+
+```typescript
+import { IdOnly } from '@txstate-mws/graphql-server'
+
+@FieldResolver(returns => Person)
+async author (@Ctx() ctx: Context, @Root() book: Book, @IdOnly() idOnly: boolean) {
+  if (idOnly) return { id: book.authorId } as Person // never fetched, and nobody can tell
+  return await ctx.svc(PersonService).findById(book.authorId)
+}
+```
+
+The new parameter adds nothing to your schema — its value is computed from the query document, not sent by the client.
+
+Two cautions. If your resolver accepts arguments that can change the result — a filter that might exclude the author, say — the stub would bypass them, so check for those yourself: `if (idOnly && filter == null)`. And the stub skips whatever authorization your service applies to fetched objects. That's fine for an id the parent object already exposes, but think it through before stubbing anything more sensitive.
+
+If the parent row carries a little more than the id — say your book query over-fetched the author's name onto the book row — `@OnlyRequested('id', 'name')` is the general form: true when everything the client selected is in the list you provide. And if you need something fancier than a boolean, the underlying helpers are exported too: take an `@Info() info: GraphQLResolveInfo` parameter and call `requestedFields(info)` for the set of selected field names, or `onlyRequested(info, 'id', 'name')` for the same check the decorators do.
+
 ## Client Scope Enforcement
 When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — provide either or both of `fieldIsInScope` or `typeIsInScope`.
 

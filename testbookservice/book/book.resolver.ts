@@ -1,5 +1,5 @@
 import { Arg, Ctx, FieldResolver, Int, Mutation, Query, Resolver, Root } from 'type-graphql'
-import { AuthError, Context, CursorPagination, CursorResponseWithTotalItems, Pagination, PageInformation, PaginationResponseWithTotals, ResolveReference, SortEntry, UploadInfo } from '../../src/index.ts'
+import { AuthError, Context, CursorPagination, CursorResponseWithTotalItems, IdOnly, Pagination, PageInformation, PaginationResponseWithTotals, ResolveReference, SortEntry, UploadInfo } from '../../src/index.ts'
 import { Author, AuthorFilter } from '../author/author.model.ts'
 import { AuthorService } from '../author/author.service.ts'
 import { Book, BookFilter } from './book.model.ts'
@@ -35,7 +35,10 @@ export class BookResolver {
   }
 
   @FieldResolver(returns => [Author])
-  async authors (@Ctx() ctx: Context, @Root() book: Book, @Arg('filter', type => AuthorFilter, { nullable: true }) filter?: AuthorFilter) {
+  async authors (@Ctx() ctx: Context, @Root() book: Book, @IdOnly() idOnly: boolean, @Arg('filter', type => AuthorFilter, { nullable: true }) filter?: AuthorFilter) {
+    // the book row already carries its author ids, so an id-only selection needs no fetch —
+    // unless a filter arrived, since filtering can exclude some of those authors
+    if (idOnly && filter == null) return book.authorIds.map(id => ({ id })) as Author[]
     return await ctx.svc(AuthorService).findByBook(book, filter)
   }
 

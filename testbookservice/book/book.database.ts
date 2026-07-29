@@ -19,7 +19,10 @@ bookDb.set(1, {
 bookDb.set(2, {
   id: 2,
   title: '1984',
-  authorIds: [2]
+  // 999 is deliberately dangling — no such author exists. A real fetch filters it out while the
+  // @IdOnly stub passes it through, which is how the test suite observes whether the escape
+  // hatch was taken without any shared counter state (test files run in parallel processes).
+  authorIds: [2, 999]
 })
 let id = 3
 for (const title of kingBooks) {

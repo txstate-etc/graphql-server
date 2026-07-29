@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.3.0
+
+An escape hatch for the classic wasted fetch: a client runs `{ books { author { id } } }` and the `author` field resolver loads the whole author record to serve up an id that was sitting on the book row the entire time. Declare an `@IdOnly()` parameter on the field resolver and it comes in `true` whenever the selection needs nothing beyond `id`, so you can return a stub and skip the fetch. `@OnlyRequested('id', 'name')` is the general form for parent rows that carry a bit more than the id, and the underlying `requestedFields(info)` / `onlyRequested(info, ...fields)` helpers are exported for anything fancier. Aliases, fragments, and `@skip`/`@include` directives are all evaluated properly, `__typename` doesn't count against you, and nothing is added to your schema — the parameter's value is computed from the query document, not sent by the client.
+
 ## 3.2.0
 
 Paginated queries can now report the total number of results, not just the last page number. Your service sets one property — `pageInfo.totalItems = count` — and `finalPage` derives itself from `totalItems` and `perPage`, so the old `Math.ceil` boilerplate goes away.
