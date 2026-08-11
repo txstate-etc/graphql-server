@@ -436,10 +436,10 @@ If the parent row carries a little more than the id — say your book query over
 When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — provide either or both of `fieldIsInScope` or `typeIsInScope`.
 
 `fieldIsInScope` and `typeIsInScope` run in two places:
-- **At runtime**, once per resolver. Denying a type or field aborts the request with HTTP 400.
+- **During query analysis**, before execution begins. We walk the parsed query and check every field and type it mentions; a single denial aborts the whole request with HTTP 400 before any resolver runs. Since we walk the query rather than the response, a field that returns a thousand rows is checked once, not a thousand times.
 - **During introspection**, to build a filtered schema so the client only sees their slice when they call `__schema` / `__type`.
 
-These functions run many times per request; they need to be synchronous and fast. Any async data they need should be loaded in `loadScopeData`. Return Sets and Maps so that you don't have to loop.
+These functions run once per field in every incoming query; they need to be synchronous and fast. Any async data they need should be loaded in `loadScopeData`. Return Sets and Maps so that you don't have to loop.
 
 ```typescript
 import { GQLServer } from '@txstate-mws/graphql-server'
