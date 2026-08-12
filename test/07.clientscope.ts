@@ -39,6 +39,128 @@ describe('client scope runtime checks', () => {
   })
 })
 
+describe('default scope functions', () => {
+  it('should allow a whitelist client to read the fields within its scope', async () => {
+    const data = await authzQuery('{ people { id, name } }', {}, await authHeaders('scoped-default-reader'))
+    expect(data.people.length).to.be.greaterThan(0)
+    expect(data.people[0].name).to.be.a('string')
+  })
+
+  it('should reject a whitelist client requesting a field outside its scope', async () => {
+    try {
+      await authzQuery('{ people { id, contact } }', {}, await authHeaders('scoped-default-reader'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person.contact')
+    }
+  })
+
+  it('should allow every field of a type whitelisted with an empty set', async () => {
+    const data = await authzQuery('{ meetings { id, title } }', {}, await authHeaders('scoped-default-typeonly'))
+    expect(data.meetings.length).to.be.greaterThan(0)
+    expect(data.meetings[0].title).to.be.a('string')
+  })
+
+  it('should still deny types absent from the allowed map, even reached through a whitelisted type', async () => {
+    try {
+      await authzQuery('{ meetings { people { id } } }', {}, await authHeaders('scoped-default-typeonly'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person')
+    }
+  })
+
+  it('should deny a __typename-only selection on a type absent from the allowed map', async () => {
+    // without the type-level check this would execute and reveal how many people each meeting has
+    try {
+      await authzQuery('{ meetings { people { __typename } } }', {}, await authHeaders('scoped-default-typeonly'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person')
+    }
+  })
+
+  it('should allow a blacklist client to read everything not disallowed', async () => {
+    const data = await authzQuery('{ people { id, name, meetings { title } } }', {}, await authHeaders('scoped-default-blacklist'))
+    expect(data.people.length).to.be.greaterThan(0)
+  })
+
+  it('should reject a blacklist client requesting a disallowed field', async () => {
+    try {
+      await authzQuery('{ people { id, contact } }', {}, await authHeaders('scoped-default-blacklist'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person.contact')
+    }
+  })
+
+  it('should reject a blacklist client requesting a disallowed root field', async () => {
+    try {
+      await authzQuery('{ meetings { id, title } }', {}, await authHeaders('scoped-default-blacklist'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Query.meetings')
+    }
+  })
+
+  it('should reject a type-banned client no matter which field returns the type', async () => {
+    // directly via Query.people
+    try {
+      await authzQuery('{ people { id } }', {}, await authHeaders('scoped-default-notype'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person')
+    }
+    // indirectly via Meeting.people
+    try {
+      await authzQuery('{ meetings { people { id } } }', {}, await authHeaders('scoped-default-notype'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person')
+    }
+  })
+
+  it('should still allow a type-banned client to read other types', async () => {
+    const data = await authzQuery('{ meetings { id, title } }', {}, await authHeaders('scoped-default-notype'))
+    expect(data.meetings.length).to.be.greaterThan(0)
+  })
+
+  it('should leave a client with two empty maps unrestricted', async () => {
+    const data = await authzQuery('{ people { id, name, contact }, meetings { title } }', {}, await authHeaders('scoped-default-empty'))
+    expect(data.people.length).to.be.greaterThan(0)
+    expect(data.meetings.length).to.be.greaterThan(0)
+  })
+
+  it('should fail closed when scope data does not match DefaultScopeData', async () => {
+    try {
+      await authzQuery('{ people { id } }', {}, await authHeaders('scoped-default-malformed'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      // the type check runs before the field check, so the malformed shape denies Person first
+      expect(e.message).to.include('is not within the scope')
+    }
+  })
+})
+
+describe('default scope introspection filtering', () => {
+  it('should hide disallowed fields from a blacklist client introspecting a type', async () => {
+    const data = await authzQuery('{ __type(name: "Person") { fields { name } } }', {}, await authHeaders('scoped-default-blacklist'))
+    const fieldNames = data.__type.fields.map((f: { name: string }) => f.name)
+    expect(fieldNames).to.include('name')
+    expect(fieldNames).to.not.include('contact')
+  })
+
+  it('should hide a banned type entirely from introspection', async () => {
+    const data = await authzQuery('{ __type(name: "Person") { fields { name } } }', {}, await authHeaders('scoped-default-notype'))
+    expect(data.__type).to.equal(null)
+  })
+
+  it('should hide a type absent from a whitelist entirely from introspection', async () => {
+    const data = await authzQuery('{ __type(name: "Meeting") { fields { name } } }', {}, await authHeaders('scoped-default-reader'))
+    expect(data.__type).to.equal(null)
+  })
+})
+
 describe('client scope introspection filtering', () => {
   const typeFieldsQuery = '{ __type(name: "Person") { fields { name } } }'
   const queryFieldsQuery = '{ __type(name: "Query") { fields { name } } }'

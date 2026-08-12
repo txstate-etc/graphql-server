@@ -33,9 +33,9 @@ server.start({
 * `after?: (queryTime, operationName, query, auth, variables, data, errors, ctx) => void | Promise<void>` - A function to run after each query/mutation completes. Useful for logging query execution time, recording an audit trail of mutations, etc. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries. See "The `after` hook" below for the full signature and an example.
 * `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `clientId` service and query string.
 * `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
-* `fieldIsInScope?: (params) => boolean | string` - Limit a client application to a subset of the schema at runtime *and* in introspection. See "Client Scope Enforcement" below.
-* `typeIsInScope?: (params) => boolean | string` - Block an entire type regardless of which field a client used to reach it. See "Client Scope Enforcement" below.
-* `loadScopeData?: (clientId) => Promise<unknown>` - Load the scope data `fieldIsInScope` / `typeIsInScope` depend on (e.g. the client's allowed-field set from a database). Cached automatically by `clientId`. Result is also placed on `ctx.scopeData`. See "Client Scope Enforcement" below.
+* `loadScopeData?: (clientId) => Promise<unknown>` - Load a client application's scope data (e.g. its allowed-field set from a database), to limit that client to a subset of the schema at runtime *and* in introspection. Usually paired with the spreadable `defaultClientScope` export. Cached automatically by `clientId`. Result is also placed on `ctx.scopeData`. See "Client Scope Enforcement" below.
+* `fieldIsInScope?: (params) => boolean | string` - Hand-written replacement for `defaultClientScope`'s field-level scope check. See "Writing your own scope functions" under "Client Scope Enforcement" below.
+* `typeIsInScope?: (params) => boolean | string` - Hand-written replacement for `defaultClientScope`'s type-level scope check; blocks an entire type regardless of which field a client used to reach it. See "Writing your own scope functions" under "Client Scope Enforcement" below.
 
 ## Fastify and GraphQL server
 We export a `GQLServer` class; the constructor accepts all the same configuration that you can send to fastify. Once constructed, `server.app` refers to your fastify instance in case you want to add routes, plugins, or middleware. `server.start(config)` will add the GraphQL and playground routes and start the server.
@@ -433,13 +433,95 @@ Two cautions. If your resolver accepts arguments that can change the result — 
 If the parent row carries a little more than the id — say your book query over-fetched the author's name onto the book row — `@OnlyRequested('id', 'name')` is the general form: true when everything the client selected is in the list you provide. And if you need something fancier than a boolean, the underlying helpers are exported too: take an `@Info() info: GraphQLResolveInfo` parameter and call `requestedFields(info)` for the set of selected field names, or `onlyRequested(info, 'id', 'name')` for the same check the decorators do.
 
 ## Client Scope Enforcement
-When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — provide either or both of `fieldIsInScope` or `typeIsInScope`.
+When you need to limit a client application to a subset of your GraphQL API — for instance, allowing a partner integration to read book metadata but not enumerate users — we have a few pieces of spec to help you.
 
-`fieldIsInScope` and `typeIsInScope` run in two places:
+First, let's look at a typical production solution with blacklisting/whitelisting. graphql-server provides a `defaultClientScope` that works through the logic for you. You just need to provide a `loadScopeData` that returns `DefaultScopeData` describing what each client may see, and spread `defaultClientScope` into your start options:
+
+```typescript
+import { GQLServer, defaultClientScope, type DefaultScopeData } from '@txstate-mws/graphql-server'
+
+const server = new GQLServer({ authenticate })
+await server.start<DefaultScopeData>({
+  resolvers: [...],
+  loadScopeData: async (clientId) => await db.getScopeForClient(clientId),
+  ...defaultClientScope
+})
+```
+
+Scope enforcement runs in two places:
 - **During query analysis**, before execution begins. We walk the parsed query and check every field and type it mentions; a single denial aborts the whole request with HTTP 400 before any resolver runs. Since we walk the query rather than the response, a field that returns a thousand rows is checked once, not a thousand times.
 - **During introspection**, to build a filtered schema so the client only sees their slice when they call `__schema` / `__type`.
 
-These functions run once per field in every incoming query; they need to be synchronous and fast. Any async data they need should be loaded in `loadScopeData`. Return Sets and Maps so that you don't have to loop.
+`DefaultScopeData` should return `allowed` and `disallowed` like so:
+
+```typescript
+// whitelist client: books with all their fields, people limited to id and name
+{
+  allowed: new Map([
+    ['Query', new Set(['books', 'people'])],
+    ['Book', new Set<string>()],
+    ['Person', new Set(['id', 'name'])]
+  ]),
+  disallowed: new Map() // empty map means no blacklist, undefined would be non-conforming and fail
+}
+
+// blacklist client: everything except people's contact info
+{
+  allowed: new Map(), // empty map means no whitelist, everything passes unless blacklisted
+  disallowed: new Map([['Person', new Set(['contact'])]])
+}
+
+// combined: only Person data, but not contact info
+{
+  allowed: new Map([
+    ['Query', new Set(['people'])],
+    ['Person', new Set<string>()] // whitelist all fields underneath 'Person'
+  ]),
+  disallowed: new Map([['Person', new Set(['contact'])]]) // blacklist Person.contact
+}
+
+// unrestricted client: two empty maps
+{ allowed: new Map(), disallowed: new Map() }
+
+// non-conforming scope data, all requests will fail
+{}
+```
+
+A few rules worth knowing:
+- `disallowed` always wins over `allowed`.
+- `allowed` and `disallowed` are strictly required and must be Maps, otherwise all requests get rejected
+- An empty Set as a Map value is like a wildcard. In a whitelist entry it means all fields in that type are allowed, in a blacklist entry it means all fields in that type are blocked. Leave type names undefined if you do not wish to whitelist or blacklist them.
+
+### Composing with the defaults
+Maps of type and field names can't express an argument-conditional rule like "some clients must paginate `Query.books`". That doesn't mean abandoning the defaults and writing everything yourself, compose your logic on top of the default instead.
+
+Extend `DefaultScopeData` with the flag you need, then write a `fieldIsInScope` function that begins with your rule, and delegate the rest to `defaultClientScope.fieldIsInScope`:
+
+```typescript
+interface MyScope extends DefaultScopeData {
+  mustPaginate: boolean
+}
+
+await server.start<MyScope>({
+  resolvers: [...],
+  loadScopeData: async (clientId) => await db.getScopeForClient(clientId),
+  ...defaultClientScope,
+  fieldIsInScope: params => {
+    if (params.scopeData?.mustPaginate && params.typeName === 'Query' && params.fieldName === 'books' && !params.isIntrospection) {
+      const pagination = (params.args as { pagination?: { perPage?: number } } | undefined)?.pagination
+      if (pagination?.perPage == null || pagination.perPage > 100) return 'Query.books requires pagination: { perPage } of 100 or less'
+    }
+    return defaultClientScope.fieldIsInScope(params)
+  }
+})
+```
+
+The default `typeIsInScope` (see below) still needs to be added via the `...defaultClientScope` spread. Return values: `true` allows, `false` denies, a `string` denies with that reason. Extra keys on the scope data ride along harmlessly — the default functions only look at `allowed` and `disallowed`, and the whole object lands on `ctx.scopeData` for resolvers too.
+
+Note the `isIntrospection` guard: during introspection filtering there is no query, so `args` is `undefined`, and denying there would hide `Query.books` from the client's schema doc entirely. A conditionally-available field should stay visible in introspection (unless the maps block it).
+
+### Writing your own scope functions
+`DefaultScopeData` can only say yes or no by type and field name. If your scoping model doesn't fit that shape at all — the scope data arrives in a format you can't change, or most of your rules are argument-conditional — skip the defaults and provide the `fieldIsInScope` and/or `typeIsInScope` options yourself:
 
 ```typescript
 import { GQLServer } from '@txstate-mws/graphql-server'
@@ -451,24 +533,30 @@ await server.start({
     return await db.getScopeForClient(clientId)
   },
   fieldIsInScope: ({ typeName, fieldName, scopeData }) => {
-    const scope = scopeData as { allowed: Set<string> } | undefined
-    return scope?.allowed.has(`${typeName}.${fieldName}`) ?? false
+    const scope = scopeData as { fields: Set<string> } | undefined
+    return scope?.fields.has(`${typeName}.${fieldName}`) ?? false
   }
 })
 ```
 
-### Return values
+These functions run once per field in every incoming query; they need to be synchronous and fast. Any async data they need should be loaded in `loadScopeData`. Return Sets and Maps so that you don't have to loop.
+
+#### Return values
 - `true` — allow this field
 - `false` — deny with the default message
 - a `string` — deny with that string appended to the 400 error (e.g. `"this endpoint is reserved for the partner tier"`)
 
 For `isIntrospection: true` calls, any non-`true` return hides the field from the introspection result; the reason string is ignored.
 
-### Blocking a whole type
-`fieldIsInScope` is good for blocking out fields, but if you want to block out a whole type, like `Person`, you'd have to cover a lot of fields, like `Query.people`, `Library.members`, `Book.author`, etc. Use `typeIsInScope` instead. Root types (`Query`, `Mutation`, `Subscription`) are always in scope - they won't be sent to you so you don't need to worry about them.
+#### Blocking a whole type
+`fieldIsInScope` is good for blocking out fields, but if you want to block out a whole type, like `Person`, you'd have to cover a lot of fields, like `Query.people`, `Library.members`, `Book.author`, etc. Use `typeIsInScope` instead:
 
 ```typescript
-await server.start<MyScope>({
+interface BannedTypesScope {
+  bannedTypes: Set<string>
+}
+
+await server.start<BannedTypesScope>({
   resolvers: [...],
   loadScopeData: async (clientId) => ({
     bannedTypes: new Set(['Person', 'Address'])
@@ -481,11 +569,15 @@ await server.start<MyScope>({
 
 Same return shape as `fieldIsInScope`: `true` to allow, `false` for the default 400, or a `string` for a custom reason. A request must pass all `fieldIsInScope` and `typeIsInScope` checks in order to proceed.
 
+You will only be asked about object, interface, and union types — the types a query can select fields on. Scalars, enums, and input types are never sent to you (govern them through the fields and args that use them), and root types (`Query`, `Mutation`, `Subscription`) are always treated as in scope.
+
+Even when your `fieldIsInScope` already confines a client tightly, provide a `typeIsInScope` for the types that client should never see, because it closes two gaps a per-field check can't reach. First, a selection like `{ people { __typename } }` contains no checkable fields, so a per-field check lets it through — and the response reveals how many `Person` objects exist. Second, introspection filtering can only hide the fields that *return* a hidden type by asking about types: with `typeIsInScope` provided, a hidden type disappears from the client's schema doc along with every field that returns it. This is exactly why `defaultClientScope` enforces its whitelist at the type level too — a whitelist client must list every object, interface, and union type it touches, and anything unlisted vanishes from both queries and introspection.
+
 ### What this model can and cannot express
 The check is field-level, keyed on `typeName` + `fieldName`. That means:
 
 - **OK**: ban `Query.people` but allow `Book.author` and `Person.name`, so a client can read an author's name reached via a book but cannot enumerate people directly.
-- **OK**: argument-conditional rules — `fieldIsInScope` receives the resolved `args`, so you can permit `Query.people` only when the caller passes the authenticated user's id, or force them to use pagination.
+- **OK**: argument-conditional rules — `fieldIsInScope` receives the resolved `args`, so you can permit `Query.people` only when the caller passes the authenticated user's id, or force them to use pagination. See "Composing with the defaults" above for how to add one of these without giving up the default functions.
 - **Not expressible**: path-conditional rules — `Person.name` reached via `Book.author` allowed but not via `Book.contributors`. If `Person.name` is whitelisted it is whitelisted everywhere; ban `Book.contributors` instead.
 
 Watch out for **indirect enumeration**: banning `Query.people` does nothing if any other allowed field returns `[Person]`. Audit all entry points to a type, not just the obvious one.

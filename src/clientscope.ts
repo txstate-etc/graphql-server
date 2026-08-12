@@ -65,10 +65,12 @@ export interface ClientScopeOptions<AuthType = unknown, ScopeData = unknown> {
     scopeData: ScopeData
   }) => boolean | string
   /**
-   * Block whole types regardless of which field a client used to reach them. Called for
-   * every non-root type referenced in a query (return types, fragment type conditions)
-   * and for every non-root type in the schema during introspection filtering. Root types
-   * (`Query`, `Mutation`, `Subscription`) are always treated as in scope.
+   * Block whole types regardless of which field a client used to reach them. Called only
+   * for object, interface, and union types — the types a query can select fields on —
+   * as they are referenced in a query (return types, fragment type conditions) and during
+   * introspection filtering. Scalars, enums, and input types are never sent to you (govern
+   * them through the fields and args that use them), and root types (`Query`, `Mutation`,
+   * `Subscription`) are always treated as in scope.
    *
    * Return shape matches `fieldIsInScope`:
    * - `true` — allow this type
@@ -106,6 +108,95 @@ export interface ClientScopeOptions<AuthType = unknown, ScopeData = unknown> {
    * infer it from this function's return type or from `fieldIsInScope`'s `scopeData` param.
    */
   loadScopeData?: (clientId: string | undefined) => Promise<ScopeData>
+}
+
+/**
+ * The scope data shape that `defaultClientScope` understands.
+ *
+ * ```typescript
+ * // whitelist client: books with all their fields, people limited to id and name
+ * {
+ *   allowed: new Map([
+ *     ['Query', new Set(['books', 'people'])],
+ *     ['Book', new Set<string>()],
+ *     ['Person', new Set(['id', 'name'])]
+ *   ]),
+ *   disallowed: new Map()
+ * }
+ *
+ * // blacklist client: everything except people's contact info
+ * { allowed: new Map(), disallowed: new Map([['Person', new Set(['contact'])]]) }
+ *
+ * // ban the whole Person type, no matter which field returns it
+ * { allowed: new Map(), disallowed: new Map([['Person', new Set<string>()]]) }
+ *
+ * // unrestricted client: two empty maps
+ * { allowed: new Map(), disallowed: new Map() }
+ * ```
+ *
+ * Two empty maps mean an unrestricted client, but `loadScopeData` returning `undefined`
+ * (client not found) denies everything — emptying a client's grants lifts the whitelist
+ * rather than revoking access. Revoke by deleting the client's scope row, or better, by
+ * no longer trusting its clientId during authentication.
+ */
+export interface DefaultScopeData {
+  /** keyed by type name; an empty set allows every field of the type, an empty map imposes no whitelist at all */
+  allowed: Map<string, Set<string>>
+  /** keyed by type name; an empty set bans the whole type; always wins over `allowed` */
+  disallowed: Map<string, Set<string>>
+}
+
+function isDefaultScopeData (scopeData: unknown): scopeData is DefaultScopeData {
+  return scopeData != null && (scopeData as DefaultScopeData).allowed instanceof Map && (scopeData as DefaultScopeData).disallowed instanceof Map
+}
+
+function defaultFieldIsInScope ({ typeName, fieldName, scopeData }: { typeName: string, fieldName: string, scopeData: unknown }): boolean {
+  if (!isDefaultScopeData(scopeData)) return false
+  const banned = scopeData.disallowed.get(typeName)
+  if (banned != null && (!(banned instanceof Set) || banned.size === 0 || banned.has(fieldName))) return false
+  if (scopeData.allowed.size === 0) return true
+  const granted = scopeData.allowed.get(typeName)
+  if (!(granted instanceof Set)) return false
+  return granted.size === 0 || granted.has(fieldName)
+}
+
+// only ever called with object, interface, and union types, so it can enforce the
+// whitelist as well as whole-type bans: a whitelist client must list every composite
+// type it touches.
+function defaultTypeIsInScope ({ typeName, scopeData }: { typeName: string, scopeData: unknown }): boolean {
+  if (!isDefaultScopeData(scopeData)) return false
+  const banned = scopeData.disallowed.get(typeName)
+  if (banned != null && !(banned instanceof Set && banned.size > 0)) return false
+  return scopeData.allowed.size === 0 || scopeData.allowed.has(typeName)
+}
+
+/**
+ * Ready-made scope enforcement for the common case where scope is a per-client map of
+ * allowed and disallowed fields. Spread it into your start options alongside a
+ * `loadScopeData` that returns `DefaultScopeData` — see that interface for the semantics
+ * and some example scopes.
+ *
+ * ```typescript
+ * await server.start<DefaultScopeData>({
+ *   resolvers: [...],
+ *   loadScopeData: async (clientId) => await db.getScopeForClient(clientId),
+ *   ...defaultClientScope
+ * })
+ * ```
+ *
+ * It's one implementation packaged as one export: the field check does nearly all of the
+ * enforcement, while the type check covers what a per-field check can't see — a
+ * `{ people { __typename } }` selection that would reveal how many objects of a banned
+ * or unlisted type exist, and introspection filtering that must drop such a type along
+ * with every field that returns it.
+ *
+ * Scope data that is missing or doesn't match the shape denies everything. Failing closed
+ * means a typo like `allow` instead of `allowed` breaks your first test query instead of
+ * silently opening the whole API.
+ */
+export const defaultClientScope = {
+  fieldIsInScope: defaultFieldIsInScope,
+  typeIsInScope: defaultTypeIsInScope
 }
 
 interface IntrospectionContext<AuthType, ScopeData> {
@@ -180,8 +271,10 @@ export class ClientScope<AuthType = unknown, ScopeData = unknown> {
             args = getArgumentValues(fieldDef, sel, variables)
           } catch { /* let execute() surface the proper error */ }
           const fieldType = getNamedType(fieldDef.type)
-          const typeErr = checkType(fieldType.name)
-          if (typeErr) return typeErr
+          if (isObjectType(fieldType) || isInterfaceType(fieldType) || isUnionType(fieldType)) {
+            const typeErr = checkType(fieldType.name)
+            if (typeErr) return typeErr
+          }
           if (this.fieldIsInScope) {
             const result = this.fieldIsInScope({ auth, typeName: parentType.name, fieldName, args, isIntrospection: false, scopeData })
             if (result !== true) return new ScopeError(parentType.name, fieldName, typeof result === 'string' ? result : undefined)
@@ -244,15 +337,15 @@ export class ClientScope<AuthType = unknown, ScopeData = unknown> {
     const allowType = (typeName: string) => this.rootTypeNames.has(typeName) || !this.typeIsInScope || this.typeIsInScope({ auth: h.auth, typeName, isIntrospection: true, scopeData: h.scopeData }) === true
     const allowField = (typeName: string, fieldName: string, fieldConfig: { type: GraphQLType }) => {
       if (this.typeIsInScope) {
-        const returnTypeName = getNamedType(fieldConfig.type).name
-        if (!allowType(returnTypeName)) return false
+        const returnType = getNamedType(fieldConfig.type)
+        if ((isObjectType(returnType) || isInterfaceType(returnType) || isUnionType(returnType)) && !allowType(returnType.name)) return false
       }
       if (this.fieldIsInScope && this.fieldIsInScope({ auth: h.auth, typeName, fieldName, args: undefined, isIntrospection: true, scopeData: h.scopeData }) !== true) return false
       return true
     }
     const filteredSchema = filterSchema({
       schema: this.schema,
-      typeFilter: allowType,
+      typeFilter: (typeName, type) => (!isObjectType(type) && !isInterfaceType(type) && !isUnionType(type)) || allowType(typeName),
       objectFieldFilter: allowField,
       interfaceFieldFilter: allowField,
       rootFieldFilter: (operation, fieldName, fieldConfig) => allowField(operation, fieldName, fieldConfig)
