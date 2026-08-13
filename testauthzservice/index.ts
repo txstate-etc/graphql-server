@@ -1,4 +1,4 @@
-import { GQLServer, defaultClientScope, type DefaultScopeData } from '../src/index.ts'
+import { GQLServer, defaultClientScope, defaultScopeDataFromRows, type DefaultScopeData } from '../src/index.ts'
 import { authenticate } from '../testservicecommon/authenticate.ts'
 import { PersonResolver } from './person/person.resolver.ts'
 import { MeetingResolver } from './meeting/meeting.resolver.ts'
@@ -12,7 +12,7 @@ const server = new GQLServer({ authenticate })
  * through defaultClientScope.
  */
 interface AuthzScope { fields: Set<string> }
-const scopedClients: Record<string, AuthzScope | DefaultScopeData> = {
+const scopedClients: Record<string, AuthzScope | DefaultScopeData | DefaultScopeData[]> = {
   'scoped-reader': {
     // may read people's id and name, but not their contact info, and may not touch meetings at all
     fields: new Set(['Query.people', 'Person.id', 'Person.name'])
@@ -51,11 +51,34 @@ const scopedClients: Record<string, AuthzScope | DefaultScopeData> = {
     allowed: new Map(),
     disallowed: new Map()
   },
+  'scoped-default-multigroup': [
+    // group 1: everything except the Person type
+    { allowed: new Map(), disallowed: new Map([['Person', new Set<string>()]]) },
+    // group 2: just people's ids and names
+    { allowed: new Map([['Query', new Set(['people'])], ['Person', new Set(['id', 'name'])]]), disallowed: new Map() }
+  ],
+  // a client with no group memberships; an empty array denies everything
+  'scoped-default-nogroups': [],
   // deliberately malformed ('allow' instead of 'allowed'); the defaults must fail closed
-  'scoped-default-malformed': { allow: new Map() } as unknown as DefaultScopeData
+  'scoped-default-malformed': { allow: new Map() } as unknown as DefaultScopeData,
+  'scoped-rows-blacklist': defaultScopeDataFromRows([
+    { typeName: 'Person', fieldName: 'contact', allowOrDisallow: 'disallow' }
+  ]),
+  'scoped-rows-wholetype': defaultScopeDataFromRows([
+    // the field row is redundant: the whole-type row wins no matter the order
+    { typeName: 'Meeting', fieldName: 'title', allowOrDisallow: 'allow' },
+    { typeName: 'Meeting', fieldName: null, allowOrDisallow: 'allow' },
+    { typeName: 'Query', fieldName: 'meetings', allowOrDisallow: 'allow' }
+  ]),
+  // zero rows produce two empty maps: an unrestricted client
+  'scoped-rows-norows': defaultScopeDataFromRows([]),
+  'scoped-rows-badvalue': defaultScopeDataFromRows([
+    // unrecognized allowOrDisallow values count as disallow
+    { typeName: 'Person', fieldName: 'contact', allowOrDisallow: 'Allow' as any }
+  ])
 }
 
-server.start<AuthzScope | DefaultScopeData | undefined>({
+server.start<AuthzScope | DefaultScopeData | DefaultScopeData[] | undefined>({
   resolvers: [PersonResolver, MeetingResolver],
   federated: !process.env.WITHOUT_FEDERATION,
   loadScopeData: async clientId => (clientId != null ? scopedClients[clientId] : undefined),

@@ -492,6 +492,25 @@ A few rules worth knowing:
 - `allowed` and `disallowed` are strictly required and must be Maps, otherwise all requests get rejected
 - An empty Set as a Map value is like a wildcard. In a whitelist entry it means all fields in that type are allowed, in a blacklist entry it means all fields in that type are blocked. Leave type names undefined if you do not wish to whitelist or blacklist them.
 
+If you store scopes in your database with one row per rule, `defaultScopeDataFromRows` restructures the rows for you:
+
+```typescript
+loadScopeData: async (clientId) => defaultScopeDataFromRows(
+  await db.getall('SELECT typeName, fieldName, allowOrDisallow FROM client_scopes WHERE clientId = ?', [clientId])
+)
+// each row is { typeName: string, fieldName: string | null, allowOrDisallow: 'allow' | 'disallow' }
+// a NULL fieldName means the whole type; a client with no rows is unrestricted (think "unscoped" NOT "no access")
+```
+
+If a client can belong to several scoping groups, return an array instead — a field or type is in scope when any group's scope allows it:
+
+```typescript
+loadScopeData: async (clientId) => {
+  const groups = await db.getScopeRowsByGroup(clientId)
+  return groups.map(rows => defaultScopeDataFromRows(rows)) // empty array (no memberships) denies everything
+}
+```
+
 ### Composing with the defaults
 Maps of type and field names can't express an argument-conditional rule like "some clients must paginate `Query.books`". That doesn't mean abandoning the defaults and writing everything yourself, compose your logic on top of the default instead.
 

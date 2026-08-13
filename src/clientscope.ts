@@ -146,11 +146,58 @@ export interface DefaultScopeData {
   disallowed: Map<string, Set<string>>
 }
 
+export interface DefaultScopeRow {
+  typeName: string
+  /** omit, null, or '' to allow/disallow the whole type */
+  fieldName?: string | null
+  allowOrDisallow: 'allow' | 'disallow'
+}
+
+/**
+ * Restructure database rows into `DefaultScopeData`, for when you store client scopes
+ * one row per rule:
+ *
+ * ```typescript
+ * defaultScopeDataFromRows([
+ *   { typeName: 'Query', fieldName: 'books', allowOrDisallow: 'allow' },
+ *   { typeName: 'Book', fieldName: null, allowOrDisallow: 'allow' }, // the whole Book type
+ *   { typeName: 'Person', fieldName: 'contact', allowOrDisallow: 'disallow' }
+ * ])
+ * // => {
+ * //   allowed: Map { 'Query' => Set { 'books' }, 'Book' => Set {} },
+ * //   disallowed: Map { 'Person' => Set { 'contact' } }
+ * // }
+ * ```
+ *
+ * A whole-type row wins over any field-level rows for the same type in the same map. An
+ * unrecognized `allowOrDisallow` value counts as 'disallow', the safe direction. A client
+ * with no rows gets two empty maps — an unrestricted client, so revoke clients at
+ * authentication rather than by deleting their rows.
+ */
+export function defaultScopeDataFromRows (rows: Iterable<DefaultScopeRow>): DefaultScopeData {
+  const scope: DefaultScopeData = { allowed: new Map(), disallowed: new Map() }
+  const wholeTypes = { allow: new Set<string>(), disallow: new Set<string>() }
+  for (const row of rows) {
+    const which = row.allowOrDisallow === 'allow' ? 'allow' : 'disallow'
+    const map = which === 'allow' ? scope.allowed : scope.disallowed
+    if (wholeTypes[which].has(row.typeName)) continue
+    if (!row.fieldName) {
+      wholeTypes[which].add(row.typeName)
+      map.set(row.typeName, new Set())
+    } else {
+      const fields = map.get(row.typeName)
+      if (fields) fields.add(row.fieldName)
+      else map.set(row.typeName, new Set([row.fieldName]))
+    }
+  }
+  return scope
+}
+
 function isDefaultScopeData (scopeData: unknown): scopeData is DefaultScopeData {
   return scopeData != null && (scopeData as DefaultScopeData).allowed instanceof Map && (scopeData as DefaultScopeData).disallowed instanceof Map
 }
 
-function defaultFieldIsInScope ({ typeName, fieldName, scopeData }: { typeName: string, fieldName: string, scopeData: unknown }): boolean {
+function fieldInSingleScope (scopeData: unknown, typeName: string, fieldName: string): boolean {
   if (!isDefaultScopeData(scopeData)) return false
   const banned = scopeData.disallowed.get(typeName)
   if (banned != null && (!(banned instanceof Set) || banned.size === 0 || banned.has(fieldName))) return false
@@ -160,14 +207,24 @@ function defaultFieldIsInScope ({ typeName, fieldName, scopeData }: { typeName: 
   return granted.size === 0 || granted.has(fieldName)
 }
 
+function defaultFieldIsInScope ({ typeName, fieldName, scopeData }: { typeName: string, fieldName: string, scopeData: unknown }): boolean {
+  if (Array.isArray(scopeData)) return scopeData.some(s => fieldInSingleScope(s, typeName, fieldName))
+  return fieldInSingleScope(scopeData, typeName, fieldName)
+}
+
 // only ever called with object, interface, and union types, so it can enforce the
 // whitelist as well as whole-type bans: a whitelist client must list every composite
 // type it touches.
-function defaultTypeIsInScope ({ typeName, scopeData }: { typeName: string, scopeData: unknown }): boolean {
+function typeInSingleScope (scopeData: unknown, typeName: string): boolean {
   if (!isDefaultScopeData(scopeData)) return false
   const banned = scopeData.disallowed.get(typeName)
   if (banned != null && !(banned instanceof Set && banned.size > 0)) return false
   return scopeData.allowed.size === 0 || scopeData.allowed.has(typeName)
+}
+
+function defaultTypeIsInScope ({ typeName, scopeData }: { typeName: string, scopeData: unknown }): boolean {
+  if (Array.isArray(scopeData)) return scopeData.some(s => typeInSingleScope(s, typeName))
+  return typeInSingleScope(scopeData, typeName)
 }
 
 /**
@@ -193,6 +250,10 @@ function defaultTypeIsInScope ({ typeName, scopeData }: { typeName: string, scop
  * Scope data that is missing or doesn't match the shape denies everything. Failing closed
  * means a typo like `allow` instead of `allowed` breaks your first test query instead of
  * silently opening the whole API.
+ *
+ * For a client that belongs to several groups, `loadScopeData` may return
+ * `DefaultScopeData[]` — one entry per group, and a field or type is in scope when any
+ * entry allows it. An empty array denies everything, same as a missing scope.
  */
 export const defaultClientScope = {
   fieldIsInScope: defaultFieldIsInScope,

@@ -131,6 +131,32 @@ describe('default scope functions', () => {
     expect(data.meetings.length).to.be.greaterThan(0)
   })
 
+  it('should allow a multi-group client anything that any of its groups allows', async () => {
+    // meetings come from group 1 (everything except Person), names from group 2 (Person id/name only)
+    const data = await authzQuery('{ meetings { id, title }, people { id, name } }', {}, await authHeaders('scoped-default-multigroup'))
+    expect(data.meetings.length).to.be.greaterThan(0)
+    expect(data.people.length).to.be.greaterThan(0)
+  })
+
+  it('should deny a multi-group client anything that every group denies', async () => {
+    // group 1 bans the Person type, group 2 whitelists only id and name, so contact stays denied
+    try {
+      await authzQuery('{ people { id, contact } }', {}, await authHeaders('scoped-default-multigroup'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person.contact')
+    }
+  })
+
+  it('should deny everything to a client with an empty array of groups', async () => {
+    try {
+      await authzQuery('{ people { id } }', {}, await authHeaders('scoped-default-nogroups'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('is not within the scope')
+    }
+  })
+
   it('should fail closed when scope data does not match DefaultScopeData', async () => {
     try {
       await authzQuery('{ people { id } }', {}, await authHeaders('scoped-default-malformed'))
@@ -158,6 +184,46 @@ describe('default scope introspection filtering', () => {
   it('should hide a type absent from a whitelist entirely from introspection', async () => {
     const data = await authzQuery('{ __type(name: "Meeting") { fields { name } } }', {}, await authHeaders('scoped-default-reader'))
     expect(data.__type).to.equal(null)
+  })
+})
+
+describe('defaultScopeDataFromRows clients', () => {
+  it('should let a rows-built blacklist client read everything except the disallowed row', async () => {
+    const data = await authzQuery('{ people { id, name }, meetings { title } }', {}, await authHeaders('scoped-rows-blacklist'))
+    expect(data.people.length).to.be.greaterThan(0)
+    expect(data.meetings.length).to.be.greaterThan(0)
+  })
+
+  it('should reject the field named by a disallow row', async () => {
+    try {
+      await authzQuery('{ people { id, contact } }', {}, await authHeaders('scoped-rows-blacklist'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person.contact')
+    }
+  })
+
+  it('should let a whole-type row cover every field, even with a competing field row first', async () => {
+    // if the field row won, only Meeting.title would be allowed and id would be rejected
+    const data = await authzQuery('{ meetings { id, title } }', {}, await authHeaders('scoped-rows-wholetype'))
+    expect(data.meetings.length).to.be.greaterThan(0)
+  })
+
+  it('should leave a client with zero rows unrestricted', async () => {
+    const data = await authzQuery('{ people { id, contact } }', {}, await authHeaders('scoped-rows-norows'))
+    expect(data.people.length).to.be.greaterThan(0)
+  })
+
+  it('should treat an unrecognized allowOrDisallow value as disallow', async () => {
+    // if 'Allow' were counted as allow it would create a whitelist and this query would be rejected
+    const data = await authzQuery('{ people { id, name } }', {}, await authHeaders('scoped-rows-badvalue'))
+    expect(data.people.length).to.be.greaterThan(0)
+    try {
+      await authzQuery('{ people { contact } }', {}, await authHeaders('scoped-rows-badvalue'))
+      expect.fail('should have thrown a scope error')
+    } catch (e: any) {
+      expect(e.message).to.include('Person.contact')
+    }
   })
 })
 
