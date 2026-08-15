@@ -116,6 +116,12 @@ describe('basic tests', () => {
     const { libraries } = await libraryQuery('{ libraries { id } }')
     expect(libraries.length).to.be.greaterThan(0)
   })
+  it('should substitute every placeholder in the playground HTML', async () => {
+    const resp = await basicbookclient.get('/')
+    expect(resp.data).to.not.include('GRAPHQL_ENDPOINT')
+    expect(resp.data).to.not.include('GRAPHQL_SETTINGS')
+    expect(resp.data).to.include("endpoint: '/graphql'")
+  })
 })
 
 // Book 2 is 1984, whose row lists author ids [2, 999] — 999 deliberately dangling. A real

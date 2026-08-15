@@ -128,9 +128,9 @@ export class GQLServer extends Server {
         res.type('text/html')
         const pg = (await readFile(path.join(moduleDir, 'playground.html'))).toString('utf-8')
         return pg
-          .replace(/GRAPHQL_ENDPOINT/v, (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0])
-          .replace(/GRAPHQL_SETTINGS/v, JSON.stringify(options.playgroundSettings))
-          .replace(/API_PREFIX/v, process.env.API_PREFIX ?? '')
+          .replaceAll('GRAPHQL_ENDPOINT', (process.env.API_PREFIX ?? '') + options.gqlEndpoint![0])
+          .replaceAll('GRAPHQL_SETTINGS', JSON.stringify(options.playgroundSettings))
+          .replaceAll('API_PREFIX', process.env.API_PREFIX ?? '')
       })
       this.app.get('/playground.js', async (req, res) => {
         res.type('text/javascript')
@@ -144,7 +144,7 @@ export class GQLServer extends Server {
       this.app.get(voyagerEndpoint, async (req, res) => {
         res.type('text/html')
         const pg = (await readFile(path.join(moduleDir, 'voyager.html'))).toString('utf-8')
-        return options.gqlEndpoint ? pg.replace(/GRAPHQL_ENDPOINT/v, (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
+        return options.gqlEndpoint ? pg.replaceAll('GRAPHQL_ENDPOINT', (process.env.API_PREFIX ?? '') + options.gqlEndpoint[0]) : pg
       })
     }
 
