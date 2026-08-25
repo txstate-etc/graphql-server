@@ -245,7 +245,7 @@ This library provides a completely opt-in `AuthorizedService` abstract class tha
 
 Each `AuthorizedService` may provide a `mayView` method that accepts an instance of the model associated with the service and returns true only if the current authenticated user should be able to view the object. This is how we implement complex user-based authorization for each data type.
 
-Additionally, each service may provide a non-mutating `removeProperties` method that accepts an instance of the model and removes or anonymizes one or more properties from the object before returning it. Do NOT mutate the input object, it will be in the dataloader cache and shouldn't be altered. Return a cloned object instead.
+Additionally, each service may provide a non-mutating `removeProperties` method that accepts an instance of the model and removes or anonymizes one or more properties from the object before returning it. Do NOT mutate the input object, it will be in the dataloader cache and shouldn't be altered. Return a clone instead, made with the `cloneModel` helper this library exports: `cloneModel(book, { price: undefined })`. It matters that the clone keeps the model's class prototype — a clone that comes back as a plain object (object spread, `structuredClone`, txstate-utils `clone`/`pick`/`omit`) looks unconverted to type-graphql, which re-runs your model's constructor with no arguments the next time a field resolver touches the object. If your constructor expects a DB row, that's a crash at request time, and only on redacted objects, so it hides from casual testing.
 
 Finally, `AuthorizedService` provides a `removeUnauthorized` method that your service may use to clean out objects the user shouldn't see. It calls `mayView` and `removeProperties` on each array element and filters out objects and properties the authenticated user should not see. It should be used every time a service method returns an array.
 
@@ -693,7 +693,7 @@ A common use is to keep an audit trail of mutations. The example below writes on
 
 ```typescript
 import Database from 'better-sqlite3'
-import { type Context } from '@txstate-mws/graphql-server'
+import { truncateLongStrings, type Context } from '@txstate-mws/graphql-server'
 import { type GraphQLError } from 'graphql'
 
 const db = new Database('mutations.db')
@@ -721,7 +721,7 @@ function logMutation (queryTime: number, operationName: string | undefined, quer
     userId: auth?.sub ?? auth?.client_id ?? null,
     operationName: operationName ?? null,
     query,
-    variables: variables != null ? JSON.stringify(variables) : null,
+    variables: variables != null ? JSON.stringify(truncateLongStrings(variables)) : null,
     queryTime
   })
 }
@@ -733,7 +733,7 @@ server.start({
 }).catch(e => { console.error(e); process.exit(1) })
 ```
 
-> If your mutations carry large or sensitive payloads (passwords, file contents, etc.), redact `variables` before storing it rather than serializing the whole object.
+> If your mutations carry sensitive payloads (passwords, tokens, etc.), redact those fields from `variables` entirely before storing it. `truncateLongStrings` (shown above) only guards against oversized fields (file contents, page bodies, etc.) by shortening any string longer than 50 characters to the last full word, suffixed with an ellipsis — it doesn't know which fields are sensitive.
 
 ## Federation
 If your GraphQL API is intended to be a member of a federation gateway, graphql-server provides some

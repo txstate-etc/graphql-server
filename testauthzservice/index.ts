@@ -2,6 +2,7 @@ import { GQLServer, defaultClientScope, defaultScopeDataFromRows, type DefaultSc
 import { authenticate } from '../testservicecommon/authenticate.ts'
 import { PersonResolver } from './person/person.resolver.ts'
 import { MeetingResolver } from './meeting/meeting.resolver.ts'
+import { DocumentResolver } from './document/document.resolver.ts'
 
 const server = new GQLServer({ authenticate })
 
@@ -79,7 +80,7 @@ const scopedClients: Record<string, AuthzScope | DefaultScopeData | DefaultScope
 }
 
 server.start<AuthzScope | DefaultScopeData | DefaultScopeData[] | undefined>({
-  resolvers: [PersonResolver, MeetingResolver],
+  resolvers: [PersonResolver, MeetingResolver, DocumentResolver],
   federated: !process.env.WITHOUT_FEDERATION,
   loadScopeData: async clientId => (clientId != null ? scopedClients[clientId] : undefined),
   fieldIsInScope: params => {

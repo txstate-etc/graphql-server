@@ -2,6 +2,30 @@ import type { FastifyTxStateAuthInfo } from 'fastify-txstate'
 import { filterAsync, isNotNull } from 'txstate-utils'
 import type { Context, Type } from './context.ts'
 
+/**
+ * Clone a model instance without losing its class prototype, optionally overwriting some
+ * of its properties in the same motion. Built for removeProperties implementations, which
+ * must return a clone so the dataloader-cached original stays unmutated.
+ *
+ * The prototype matters more than it looks: any clone that returns a plain object (object
+ * spread, structuredClone, txstate-utils clone/pick/omit) fails type-graphql's `instanceof`
+ * check while resolving any @FieldResolver on the type, and type-graphql responds by
+ * re-running your model class's constructor with no arguments. If your constructor expects
+ * a DB row, that's a TypeError at request time — and only for redacted objects on types
+ * with field resolvers, so it slips right past casual testing.
+ *
+ * The clone is shallow on purpose: redaction only writes top-level fields, and a deep clone
+ * would mangle class-typed members like a luxon DateTime.
+ *
+ * @example
+ * protected removeProperties (source: Source) {
+ *   return this.isSuperadmin() ? source : cloneModel(source, { config: undefined })
+ * }
+ */
+export function cloneModel<T extends object> (obj: T, overrides?: Partial<T>): T {
+  return Object.assign(Object.create(Object.getPrototypeOf(obj) as object) as T, obj, overrides)
+}
+
 export abstract class BaseService<AuthType extends FastifyTxStateAuthInfo = FastifyTxStateAuthInfo> {
   constructor (protected ctx: Context<AuthType>) {}
 
@@ -49,8 +73,12 @@ export abstract class AuthorizedService<AuthType extends FastifyTxStateAuthInfo 
    * for all but the most privileged viewers.
    *
    * Do NOT mutate the object given, it will be cached in various dataloaders and you
-   * don't want to alter the cache. Return a new cloned object instead. You may find
-   * the txstate-utils functions clone, pick, and omit functions especially helpful.
+   * don't want to alter the cache. Return a new clone instead, made with the cloneModel
+   * helper exported by this library. Do not clone with object spread, structuredClone, or
+   * the txstate-utils clone/pick/omit functions: those all return plain objects, and losing
+   * the class prototype makes type-graphql re-run your model's constructor with no arguments
+   * whenever a @FieldResolver resolves on the redacted object. See cloneModel's doc comment
+   * for the full story.
    *
    * Removing foreign key info in this function can be problematic.
    */
@@ -95,8 +123,12 @@ export abstract class AuthorizedServiceSync<AuthType extends FastifyTxStateAuthI
    * for all but the most privileged viewers.
    *
    * Do NOT mutate the object given, it will be cached in various dataloaders and you
-   * don't want to alter the cache. Return a new cloned object instead. You may find
-   * the txstate-utils functions clone, pick, and omit especially helpful.
+   * don't want to alter the cache. Return a new clone instead, made with the cloneModel
+   * helper exported by this library. Do not clone with object spread, structuredClone, or
+   * the txstate-utils clone/pick/omit functions: those all return plain objects, and losing
+   * the class prototype makes type-graphql re-run your model's constructor with no arguments
+   * whenever a @FieldResolver resolves on the redacted object. See cloneModel's doc comment
+   * for the full story.
    *
    * Removing foreign key info in this function can be problematic.
    */

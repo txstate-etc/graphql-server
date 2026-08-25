@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.4.2
+
+`removeProperties` implementations that redacted a model by returning `{ ...source, secret: undefined }`, `structuredClone(source)`, or `clone(source)` from txstate-utils were secretly broken: all three return a plain object, so the next `@FieldResolver` that touches the redacted object fails type-graphql's `instanceof` check, and type-graphql "fixes" that by re-running the model's constructor with no arguments. If your constructor expects a DB row, that's a `TypeError` at request time, and only on the redacted objects, so it hides from casual testing until a client asks for a field that happens to have a resolver.
+
+`cloneModel` is the fix: a shallow clone that keeps the class prototype, with an optional second argument for the properties you want to overwrite. `cloneModel(source, { secret: undefined })` replaces all three of the broken patterns above. The clone is intentionally shallow: a deep clone would mangle class-typed members like a luxon `DateTime`.
+
+Also added `truncateLongStrings`, a small helper for the mutation-logging recipe in the README. It walks an object and shortens any string over 50 characters to the last full word plus an ellipsis, so you can log mutation variables without storing entire file uploads or page bodies. It doesn't know which fields are sensitive, so you're still on your own for redacting passwords and tokens before logging.
+
+## 3.4.1
+
+The playground's `GRAPHQL_ENDPOINT` placeholder appears more than once in playground.html, but the substitution used `.replace()` with a single regex and no `g` flag, so only the first occurrence got filled in and the rest stayed as literal `GRAPHQL_ENDPOINT` text. The playground loaded but never knew where your API was. `GRAPHQL_SETTINGS` and `API_PREFIX` had the same bug. Switched to `.replaceAll()` with plain string patterns, which replaces every occurrence.
+
+## 3.4.0
+
+Storing client scopes as one row per rule meant hand-building `DefaultScopeData`'s allow/disallow maps yourself. `defaultScopeDataFromRows` does that translation for you: hand it your rows and it builds the maps, treating a missing or null `fieldName` as "the whole type" and any `allowOrDisallow` value other than `'allow'` as a disallow, the safe direction.
+
+`loadScopeData` can also now return an array of `DefaultScopeData`, one per scoping group a client belongs to. A field or type is in scope if any group allows it, useful when access comes from group membership rather than a single flat scope. An empty array denies everything, same as a missing scope.
+
 ## 3.3.0
 
 An escape hatch for the classic wasted fetch: a client runs `{ books { author { id } } }` and the `author` field resolver loads the whole author record to serve up an id that was sitting on the book row the entire time. Declare an `@IdOnly()` parameter on the field resolver and it comes in `true` whenever the selection needs nothing beyond `id`, so you can return a stub and skip the fetch. `@OnlyRequested('id', 'name')` is the general form for parent rows that carry a bit more than the id, and the underlying `requestedFields(info)` / `onlyRequested(info, ...fields)` helpers are exported for anything fancier. Aliases, fragments, and `@skip`/`@include` directives are all evaluated properly, `__typename` doesn't count against you, and nothing is added to your schema — the parameter's value is computed from the query document, not sent by the client.
