@@ -43,6 +43,13 @@ services:
       - digestbookservice
       - libraryservice
       - authzservice
+      - otel-collector
+  otel-collector:
+    image: otel/opentelemetry-collector:0.164.0
+    attach: false
+    command: [--config=/etc/otelcol/test-config.yaml]
+    volumes:
+      - ./test/otel-collector.yaml:/etc/otelcol/test-config.yaml:ro
   bookservice:
     build:
       context: .
@@ -87,9 +94,15 @@ services:
       context: .
       dockerfile: Dockerfile.authzservice
     attach: false
+    depends_on:
+      - otel-collector
     environment:
       NODE_ENV: development
       WITHOUT_FEDERATION: 'true'
+      # test/10.otel.ts asserts on the telemetry this service exports
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: authzservice
+      OTEL_METRIC_EXPORT_INTERVAL: 1000
       # JWT keys are for testing only and not used in the library
       JWT_SECRET: 'qgTWt3GT3T9zs2RaJ9GAhBHBrIsz6tnARemc6ZSyzj4='
   gateway:

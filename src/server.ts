@@ -3,9 +3,9 @@ import { Writable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type { Multipart } from '@fastify/multipart'
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import Server, { type FastifyTxStateOptions, HttpError, prodLogger, registeredExceptRoutes } from 'fastify-txstate'
+import Server, { type FastifyTxStateOptions, HttpError, prodLogger, registeredExceptRoutes, withSpan } from 'fastify-txstate'
 import { readFile } from 'node:fs/promises'
-import { execute, type ExecutionResult, type GraphQLError, type GraphQLSchema, type DefinitionNode, type OperationDefinitionNode, Kind, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
+import { execute, type ExecutionResult, type GraphQLError, type GraphQLSchema, lexicographicSortSchema, parse, specifiedRules, validate } from 'graphql'
 import { LRUCache } from 'lru-cache'
 import pino from 'pino'
 import { Cache, toArray } from 'txstate-utils'
@@ -16,6 +16,7 @@ import { Context, MockContext } from './context.ts'
 import { PageInformation, PageInformationResolver } from './pagination.ts'
 import { ExecutionError, ParseError, AuthError } from './errors.ts'
 import { buildFederationSchema } from './federation.ts'
+import { boundedOperationName, countDeprecatedFields, describeOperation, findDeprecatedFields, findOperation, operationLabel, recordExecutionErrors, recordOperationDuration, traceResolvers } from './telemetry.ts'
 import { NoIntrospection, shasum } from './util.ts'
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
@@ -50,6 +51,14 @@ export interface GQLStartOpts<CustomContext extends typeof Context = typeof Cont
   signedQueriesWhitelist?: Set<string>
   after?: (queryTime: number, operationName: string | undefined, query: string, auth: any, variables: any, data: any, errors: GraphQLError[] | undefined, ctx: InstanceType<CustomContext>) => void | Promise<void>
   send403?: (ctx: InstanceType<CustomContext>) => boolean | Promise<boolean>
+  /**
+   * Break the `graphql.server.operation.duration` and `graphql.server.deprecated_field.uses`
+   * metrics down by `ctx.auth.clientId`, as the `auth.client.id` attribute. Off by default because every client multiplies the number of
+   * time series: each one gets its own per operation name, and fastify-txstate stops tracking
+   * new combinations past 2000. Turn it on when your clients are a short, fixed list of
+   * applications, not when anyone can register one.
+   */
+  metricsByClient?: boolean
   /**
    * Run any async tasks that require the schema to be fully built, but need to complete before the
    * server begins accepting requests. In DosGato CMS this is used to populate test data, which requires
@@ -171,15 +180,18 @@ export class GQLServer extends Server {
     if (options.federated) {
       schema = buildFederationSchema(schema)
     }
+    traceResolvers(schema)
 
     const clientScope = new ClientScope<InstanceType<typeof ContextClass>['auth'], ScopeData>(schema, options)
     const validateRules = [...specifiedRules, ...(options.introspection && process.env.GRAPHQL_INTROSPECTION !== 'false' ? [] : [NoIntrospection])]
-    const parsedQueryCache = new Cache(async (query: string) => {
+    // the span is inside the loader so that it only appears when a request actually paid for the parse
+    const parsedQueryCache = new Cache(async (query: string) => withSpan('graphql.parse', () => {
       const parsedQuery = parse(query)
       const errors = validate(schema, parsedQuery, validateRules)
       if (errors.length) return new ParseError(query, errors)
+      findDeprecatedFields(schema, parsedQuery)
       return parsedQuery
-    }, {
+    }), {
       freshseconds: 3600,
       staleseconds: 7200
     })
@@ -199,8 +211,8 @@ export class GQLServer extends Server {
     ;(MockContext as unknown as { executeQuery: ExecuteQueryFn }).executeQuery = async (ctx, query, variables, operationName) => {
       const parsedQuery = await parsedQueryCache.get(query)
       if (parsedQuery instanceof ParseError) throw new Error(parsedQuery.toString())
-      operationName ??= parsedQuery.definitions.find((def: DefinitionNode): def is OperationDefinitionNode => def.kind === Kind.OPERATION_DEFINITION)?.name?.value
-      return await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: variables, operationName })
+      operationName ??= findOperation(parsedQuery)?.name?.value
+      return await withSpan('graphql.execute', async () => await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: variables, operationName }), { 'graphql.operation.name': operationName })
     }
 
     await options.beforeStartup?.(schema)
@@ -269,27 +281,40 @@ export class GQLServer extends Server {
           req.log.error(parsedQuery.toString())
           return { errors: parsedQuery.errors }
         }
-        const operationName: string | undefined = body.operationName ?? parsedQuery.definitions.find((def: DefinitionNode): def is OperationDefinitionNode => def.kind === Kind.OPERATION_DEFINITION)?.name?.value
-        req.log.info({ operationName, query, auth: ctx.authForLog() }, 'finished parsing query')
+        const operation = findOperation(parsedQuery, body.operationName)
+        const operationName: string | undefined = body.operationName ?? operation?.name?.value
+        // a signed query's name was chosen by a developer; anything else is whatever the client typed
+        const signed = options.requireSignedQueries === true && !options.signedQueriesWhitelist!.has(ctx.auth?.clientId ?? '')
+        // execution needs the real operationName; everything that reports on the operation gets the label
+        const metricClientId = options.metricsByClient ? ctx.auth?.clientId : undefined
+        countDeprecatedFields(parsedQuery, metricClientId)
+        const label = operationLabel(operation, operationName)
+        const boundedName = boundedOperationName(label, signed)
+        // must come before the execute span opens, while the request's span is still the active one
+        describeOperation(operation, label, boundedName)
+        req.log.info({ operationName: label, query, auth: ctx.authForLog() }, 'finished parsing query')
         const start = new Date()
         let ret: ExecutionResult
         if (clientScope.enabled && isIntrospectionOperation(parsedQuery, operationName)) {
-          ret = await clientScope.runIntrospection({ query, parsedQuery, operationName, variables: body.variables, auth: ctx.auth, scopeData, ctx, clientId: ctx.auth?.clientId })
+          ret = await withSpan('graphql.execute', async () => await clientScope.runIntrospection({ query, parsedQuery, operationName, variables: body.variables, auth: ctx.auth, scopeData, ctx, clientId: ctx.auth?.clientId }))
         } else {
           if (clientScope.enabled) {
             const scopeError = clientScope.analyze(parsedQuery, operationName, body.variables, ctx.auth, scopeData)
             if (scopeError) throw scopeError
           }
-          ret = await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: body.variables, operationName })
+          ret = await withSpan('graphql.execute', async () => await execute({ schema, document: parsedQuery, contextValue: ctx, variableValues: body.variables, operationName }))
         }
+        let errorType: string | undefined
         if (ret.errors?.length) {
           if (ret.errors.some(e => authErrorRegex.test(e.message))) throw new AuthError()
           req.log.error(new ExecutionError(query, ret.errors).toString())
+          errorType = recordExecutionErrors(ret)
         }
         await ctx.drainFiles()
         if (operationName !== 'IntrospectionQuery') {
           const queryTime = new Date().getTime() - start.getTime()
-          const afterResult = options.after!(queryTime, operationName, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)
+          recordOperationDuration(queryTime / 1000, operation, boundedName, errorType, metricClientId)
+          const afterResult = options.after!(queryTime, label, query, ctx.auth, body.variables, ret.data, ret.errors as GraphQLError[], ctx)
           if (afterResult instanceof Promise) afterResult.catch((e: unknown) => { res.log.error(e) })
         }
         return ret

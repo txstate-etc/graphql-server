@@ -31,6 +31,7 @@ server.start({
 * `send401?: boolean` (default `false`) - Return an HTTP 401 response if request is unauthenticated. Only set `true` if none of your API is public. The alternative is to send back empty results or graphql errors when users request private data and haven't authenticated.
 * `federated?: boolean` (default: `false`) - API is meant to be a member of a federated system (emits Apollo Federation v2 subgraph SDL). See "Federation" below for more info.
 * `after?: (queryTime, operationName, query, auth, variables, data, errors, ctx) => void | Promise<void>` - A function to run after each query/mutation completes. Useful for logging query execution time, recording an audit trail of mutations, etc. `queryTime` is the number of milliseconds for which the query was executing. Does not fire for introspection queries. See "The `after` hook" below for the full signature and an example.
+* `metricsByClient?: boolean` (default: `false`) - Break the `graphql.server.operation.duration` and `graphql.server.deprecated_field.uses` OpenTelemetry metrics down by `ctx.auth.clientId`. Every client multiplies the number of time series, so only turn it on when your clients are a short, fixed list of applications.
 * `requireSignedQueries?: boolean` (default: `false`) - If set then requests are expected to include a signed digest of the `clientId` service and query string.
 * `signedQueriesWhitelist?: Set<string>` (default: empty set) - This is a set of whitelisted client services that are not required to provide query digests in requests.
 * `loadScopeData?: (clientId) => Promise<unknown>` - Load a client application's scope data (e.g. its allowed-field set from a database), to limit that client to a subset of the schema at runtime *and* in introspection. Usually paired with the spreadable `defaultClientScope` export. Cached automatically by `clientId`. Result is also placed on `ctx.scopeData`. See "Client Scope Enforcement" below.
@@ -677,7 +678,7 @@ The `after` option runs after every (non-introspection) operation completes, giv
 ```typescript
 after?: (
   queryTime: number,                  // milliseconds the operation spent executing
-  operationName: string | undefined,  // the named operation, if the client provided one
+  operationName: string | undefined,  // the operation's name, or for an anonymous mutation, the first mutation in it
   query: string,                       // the raw query/mutation string
   auth: any,                           // the resolved ctx.auth (e.g. the decoded token payload)
   variables: any,                      // the operation's variables
